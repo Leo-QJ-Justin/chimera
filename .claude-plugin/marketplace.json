@@ -1,0 +1,15 @@
+{
+  "name": "chimera",
+  "owner": {
+    "name": "Leo Q.J.",
+    "url": "https://github.com/Leo-QJ-Justin"
+  },
+  "plugins": [
+    {
+      "name": "chimera",
+      "source": "./",
+      "description": "Personal hybrid workflow plugin composing Superpowers + planning-with-files with a branch-enforcement hook.",
+      "version": "0.1.0"
+    }
+  ]
+}

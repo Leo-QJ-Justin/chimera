@@ -1,0 +1,15 @@
+.DS_Store
+*.swp
+*.swo
+*.bak
+
+# planning-with-files working notes (task_plan.md stays committed for visibility)
+findings.md
+progress.md
+
+# editor / IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db

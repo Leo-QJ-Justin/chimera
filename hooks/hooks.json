@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo \"[chimera] Refusing to Edit/Write on '$branch' — create a feature branch first (git checkout -b feat/..., or use superpowers:using-git-worktrees).\" >&2; exit 2; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
