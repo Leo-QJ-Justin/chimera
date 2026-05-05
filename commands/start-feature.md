@@ -58,7 +58,7 @@ For each phase in the Superpowers plan, in plan order:
 
    Default priority is **P1** (high) for all phases. P0 is reserved for emergency/blocker phases.
 
-2. Capture each `PHASE_ID` using the same approach as Step 2.4.
+2. Capture each `PHASE_ID` using the same `--json` / `awk` extraction approach described in Step 2.4.
 
 For sequential phases (Phase N depends on Phase N-1):
 
