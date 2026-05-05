@@ -7,6 +7,9 @@
 findings.md
 progress.md
 
+# top-level plans/ from other tools (root-anchored so docs/superpowers/plans/ stays committed)
+/plans/
+
 # editor / IDE
 .vscode/
 .idea/
