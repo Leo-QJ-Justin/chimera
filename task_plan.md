@@ -4,7 +4,7 @@
 Integrate `bd` (beads CLI) into chimera's `/start-feature` for dependency-aware backlog tracking, plus document the manual smoke procedure.
 
 ## Current Phase
-Phase 1 — Rewrite commands/start-feature.md
+Wrap-up — final code review + finishing-a-development-branch
 
 ## Plan reference
 docs/superpowers/plans/2026-05-05-v0.2-beads-integration.md
@@ -14,13 +14,13 @@ docs/superpowers/specs/2026-05-05-v0.2-beads-integration-design.md
 
 ## Phases
 ### Phase 1 — Rewrite commands/start-feature.md to v0.2 (8-step pipeline)
-- **Status:** in_progress
+- **Status:** complete
 ### Phase 2 — Create docs/testing/smoke.md
-- **Status:** pending
+- **Status:** complete
 ### Phase 3 — Bump version to 0.2.0 (plugin.json + marketplace.json)
-- **Status:** pending
+- **Status:** complete
 ### Phase 4 — Add v0.2.0 entry to CHANGELOG.md
-- **Status:** pending
+- **Status:** complete
 
 ## Decisions Made
 | Decision | Rationale |
