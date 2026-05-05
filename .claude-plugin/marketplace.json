@@ -9,7 +9,7 @@
       "name": "chimera",
       "source": "./",
       "description": "Personal hybrid workflow plugin composing Superpowers + planning-with-files with a branch-enforcement hook.",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }

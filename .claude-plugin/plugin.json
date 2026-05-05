@@ -1,6 +1,6 @@
 {
   "name": "chimera",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Personal hybrid workflow plugin composing Superpowers and planning-with-files into an enterprise-ready feature development rhythm. Ships a /start-feature orchestration command and a branch-enforcement PreToolUse hook.",
   "author": {
     "name": "Leo Q.J.",
