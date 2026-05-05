@@ -38,7 +38,7 @@ Invoke `superpowers:brainstorming`. Produce the design doc at `docs/superpowers/
    awk '/Created issue:/ {print $4; exit}'
    ```
 
-   on stdout. **Important:** beads issue IDs have the form `bd-<lowercase-prefix>-<hash>` with multiple dashes. Do NOT use a greedy regex like `bd-[a-z0-9]+` — it will silently match only `bd-<prefix>` and you'll pass the prefix as the epic ID, breaking subsequent commands.
+   on stdout. **Important — beads issue IDs have two formats:** epics and top-level issues use `bd-<lowercase-prefix>-<hash>` (multiple dashes, e.g. `bd-chimera-7nq`); children created with `--parent` use `<parent-id>.<integer>` (e.g. `bd-chimera-7nq.1`). The `awk '/Created issue:/ {print $4; exit}'` approach works for both because it's whitespace-delimited. Do NOT use a greedy regex like `bd-[a-z0-9]+` — it silently matches only `bd-<prefix>` for top-level IDs and breaks completely on children.
 
 ### Step 3 — Write the implementation plan
 
@@ -111,7 +111,7 @@ For each phase, in the order surfaced by `bd ready --json`:
 
 1. `bd update <phase-id> --claim` (atomic; prevents duplicate claims by parallel sessions).
 2. Run TDD steps from the Superpowers plan for this phase. Use `superpowers:subagent-driven-development`.
-3. `bd close <phase-id> "<resolution>"` once tests green and committed.
+3. `bd close <phase-id> --reason "<resolution>"` once tests green and committed. The `--reason` flag is required — `bd close <id> "text"` (without `--reason`) makes beads try to interpret the resolution as another issue ID and errors.
 4. Update `task_plan.md` dashboard's Phase status to `complete`.
 
 ### Step 7 — Wrap up

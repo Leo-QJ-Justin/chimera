@@ -12,6 +12,10 @@ All notable changes to chimera are documented here. Format follows [Keep a Chang
 ### Changed
 - `commands/start-feature.md` rewritten from 7-step to 8-step pipeline. Steps 5 and 6 now reference bd IDs (in the `task_plan.md` dashboard) and use the `bd update --claim` / `bd close` lifecycle around each phase.
 
+### Fixed (pre-release dogfood walkthrough)
+- Step 6.3 close syntax — was `bd close <id> "<resolution>"` (wrong; beads errors trying to parse the resolution as another issue ID). Corrected to `bd close <id> --reason "<resolution>"`.
+- Step 2.4 documented gotcha now covers both beads ID formats: flat (`bd-<prefix>-<hash>`) for top-level/epic issues, dotted (`<parent-id>.<int>`) for children. The `awk` extraction works for both; the previous warning implied only the flat form existed.
+
 ### Notes
 - Requires `bd` v1.0.3+ from `gastownhall/beads`. Install: `curl -fsSL https://raw.githubusercontent.com/gastownhall/beads/main/scripts/install.sh | bash`.
 - The branch hook is still CWD-scoped, not file-scoped. Tracked as a v0.3 candidate. Workaround documented in the workflow memory: `cd` to a non-git dir before editing user-level files.
