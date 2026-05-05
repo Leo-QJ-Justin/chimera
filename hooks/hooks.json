@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo \"[chimera] Refusing to Edit/Write on '$branch' — create a feature branch first (git checkout -b feat/..., or use superpowers:using-git-worktrees).\" >&2; exit 2; fi; exit 0"
+            "command": "input=$(cat); branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [ \"$branch\" != \"main\" ] && [ \"$branch\" != \"master\" ]; then exit 0; fi; if [ \"$CHIMERA_ALLOW_MAIN\" = \"1\" ]; then exit 0; fi; file=$(printf '%s' \"$input\" | python3 -c 'import json,sys; d=json.load(sys.stdin); ti=d.get(\"tool_input\",{}); print(ti.get(\"file_path\") or ti.get(\"notebook_path\") or \"\")'); case \"$file\" in *.md|*/docs/*) exit 0;; esac; case \"$(basename \"$file\")\" in CHANGELOG*|README*|LICENSE*|.gitignore|.gitattributes|.editorconfig) exit 0;; esac; echo \"[chimera] Refusing to Edit/Write '$file' on '$branch' — create a feature branch (git checkout -b feat/...) or set CHIMERA_ALLOW_MAIN=1 for chores. Docs (*.md, docs/**, CHANGELOG/README/LICENSE/.gitignore/.gitattributes/.editorconfig) auto-pass.\" >&2; exit 2"
           }
         ]
       }

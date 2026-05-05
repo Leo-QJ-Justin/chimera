@@ -2,6 +2,12 @@
 
 All notable changes to chimera are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Branch-enforcement hook now allows chores and docs on `main`/`master` without a branch. Two carve-outs: (1) path allowlist — `*.md`, `docs/**`, and basenames `CHANGELOG*`/`README*`/`LICENSE*`/`.gitignore`/`.gitattributes`/`.editorconfig` auto-pass; (2) escape hatch — `CHIMERA_ALLOW_MAIN=1` env var skips the hook for code-touching chores. Hook now uses `python3` (not `jq`) to parse the `tool_input` payload, since `jq` isn't a guaranteed dependency.
+- `/start-feature` Step 0 unchanged — features still require a branch (the carve-outs are for the always-on hook only).
+
 ## [0.2.0] - 2026-05-05
 
 ### Added

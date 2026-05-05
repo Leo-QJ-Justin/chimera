@@ -14,7 +14,7 @@ Solo Claude Code workflows often skip discipline that matters in team settings: 
 ## v0.2 contents
 
 - **`/start-feature`** — 8-step orchestration command. Pipeline: verify branch first (Step 0) → brainstorm spec → bootstrap `bd` epic → write plan → sync plan phases to `bd` issues with dependency edges → scaffold persistence layer → execute with `bd update --claim` / `bd close --reason` lifecycle → wrap up via `superpowers:finishing-a-development-branch`. Steps 0, 2, and 4 are new in v0.2.
-- **`PreToolUse` hook on `Write|Edit|NotebookEdit`** — blocks edits when the current branch is `main` or `master`. No-ops in non-git directories. Bypass via the `/hooks` UI for legitimate edits to docs on main.
+- **`PreToolUse` hook on `Write|Edit|NotebookEdit`** — blocks edits when the current branch is `main` or `master`, with two carve-outs so chores and docs don't need a branch: (a) **path allowlist** — `*.md`, `docs/**`, and basenames `CHANGELOG*`/`README*`/`LICENSE*`/`.gitignore`/`.gitattributes`/`.editorconfig` auto-pass; (b) **escape hatch** — set `CHIMERA_ALLOW_MAIN=1` in the shell to skip the hook entirely (use for code-touching chores like dep bumps). No-ops in non-git directories.
 - **`docs/testing/smoke.md`** — manual end-to-end smoke procedure (chimera is a markdown-instruction plugin; this replaces unit tests for v0.2).
 
 ## Dependencies (assumed installed separately)
