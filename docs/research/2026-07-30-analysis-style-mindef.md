@@ -137,8 +137,17 @@ Why it is here" (q2), "# | Assumption | Justification" (scenario2).
   This is the PURE FORM of Leo's stated no-hyphen preference.
 - scenario2 + all READMEs + Micron: hyphenated compounds and em dashes
   used freely as primary structure.
-- Codification decision (Leo, 2026-07-30): the Section 2 form is
-  canonical for analysis prose.
+- Codification decision (Leo, 2026-07-30): dashes are STRUCTURAL, never
+  prose. Rationale: dash-heavy prose "sounds very AI". Allowed: dash as a
+  separator (heading suffix "## 2.1 Bar Chart — Target Distribution",
+  name — description pairs in trees/tables). Banned: em/en dashes as
+  clause joins inside sentences; hyphenated compound modifiers in
+  analysis text (write "chi square test", "one parameter model"). The
+  Section 2 notebooks are the reference form for prose; the Micron/
+  scenario2 em-dash-in-prose habit is the deviation to avoid.
+- Playbooks decision (Leo, 2026-07-30): eda-playbooks DEFERRED — Leo has
+  additional resources to trawl before writing per-topic playbooks; do
+  not draft them from this corpus alone.
 
 Headings: strictly numbered; `---` rule before every top-level `#`;
 Title Case in q1/q2, sentence case in q3/scenario2; scenario2 appends
