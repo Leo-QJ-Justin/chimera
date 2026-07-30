@@ -1,0 +1,94 @@
+# chimera
+
+Self-contained personal Claude Code harness: a mode-aware development loop
+with project-genesis and scaffolding commands. Skills are adapted from
+[Superpowers](https://github.com/obra/superpowers) (Jesse Vincent, MIT) and
+the review agent from
+[Everything Claude Code](https://github.com/affaan-m/everything-claude-code)
+(affaan-m, MIT) — cut down to a bare-minimum workflow set and made
+mode-aware for mixed software/ML work.
+
+**Posture: strict inside the loop, frictionless outside it.** Chimera never
+blocks work done directly on `main` (docs, chores, quick fixes). Discipline
+is opt-in by entering the loop — and enforced once inside.
+
+## The model
+
+**Two altitudes:**
+
+- **Genesis** (`/design-project`): brainstorm → PRD (app-shaped, or
+  ML-shaped via CRISP-DM phases 1-2) → architecture + tradeoffs (ADRs) →
+  system design (modules with I/O contracts) → roadmap (task backlog).
+- **Loop** (`/start-task`): gate → mode → design → plan → execute → verify
+  → review → finish. One roadmap row at a time.
+
+**Two modes**, declared per task ("code we'll keep, or an answer we'll act
+on?"):
+
+| Stage | Build mode | Exploration mode |
+|---|---|---|
+| Design | task spec (module I/O contracts) | research brief (+ "what result changes what decision?") |
+| Plan | implementation plan, tests per task | experiment plan + stopping rule |
+| Execute | strict TDD | pinned data, seeds, findings log |
+| Verify | fresh test run | clean rerun reproduces numbers |
+| Review | code review | methodology review (leakage, bias, hygiene) |
+| Finish | merge/PR | recorded decision; experiment code archived |
+
+The bridge is the **promotion rule**: a winning experiment becomes a new
+build-mode task, written test-first, with the experiment's numbers as
+acceptance criteria. Spike code is never merged.
+
+## Contents
+
+- **8 skills** — `using-chimera` (bootstrap, injected each session),
+  `designing-tasks`, `writing-plans`, `test-driven-development`,
+  `exploring-reproducibly`, `verifying-before-done`,
+  `debugging-systematically`, `finishing-a-branch`
+- **3 commands** — `/design-project`, `/start-task`, `/new-project`
+- **1 agent** — `code-reviewer` (read-only tools; confidence-gated; "zero
+  findings is a valid review"; build + exploration rubrics)
+- **2 hooks** — SessionStart bootstrap injection (`startup|clear|compact`);
+  warn-only branch nudge on source edits on main (never blocks;
+  `CHIMERA_SILENCE_NUDGE=1` to mute)
+- **5 templates** — `CLAUDE.user.md`, `CLAUDE.project.md`, `prd-app.md`,
+  `prd-ml.md`, `system-design.md`
+
+## Install
+
+```bash
+/plugin marketplace add Leo-QJ-Justin/chimera
+/plugin install chimera@chimera
+```
+
+Copy `templates/CLAUDE.user.md` over `~/.claude/CLAUDE.md` (merge with any
+existing preferences). New projects get their CLAUDE.md via `/new-project`.
+
+Updating an installed chimera: see
+[docs/update-procedure.md](docs/update-procedure.md).
+
+## Design documents
+
+- [Workflow inventory](docs/specs/2026-07-29-workflow-inventory.md)
+  — the bare-minimum workflow set every artifact traces to
+- [v1.0 design spec](docs/specs/2026-07-29-chimera-v1-design.md)
+  — every artifact defined, with rationale
+- [Reference research](docs/research/) — deep-mining reports over
+  Superpowers and ECC (consult before re-reading those repos)
+
+## Testing
+
+`bash tests/test-branch-nudge.sh && bash tests/test-session-start.sh` for
+the hooks; [docs/testing/smoke.md](docs/testing/smoke.md) for the manual
+end-to-end matrix.
+
+## Roadmap
+
+- **v1.1** — RED-gate TDD hook (PreToolUse block on source edits without an
+  observed failing test; exceeds what either reference enforces)
+- **v1.x** — `/learn` retro command (manual, quality-gated, modeled on
+  ECC's `/learn-eval`)
+- **v2** — language rules packs (Python first)
+
+## License
+
+MIT

@@ -1,0 +1,15 @@
+{
+  "name": "chimera",
+  "owner": {
+    "name": "Leo Q.J.",
+    "url": "https://github.com/Leo-QJ-Justin"
+  },
+  "plugins": [
+    {
+      "name": "chimera",
+      "source": "./",
+      "description": "Self-contained personal harness: mode-aware (build|exploration) development loop with project-genesis and scaffolding commands.",
+      "version": "1.0.0"
+    }
+  ]
+}

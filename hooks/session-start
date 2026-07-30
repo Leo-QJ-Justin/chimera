@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Injects the using-chimera bootstrap at session start (startup|clear|compact).
+# Claude Code only. Never blocks: any failure exits 0 with no output.
+set -euo pipefail
+PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SKILL="${PLUGIN_ROOT}/skills/using-chimera/SKILL.md"
+[ -f "$SKILL" ] || exit 0
+content="$(cat "$SKILL")" || exit 0
+payload="<CHIMERA_BOOTSTRAP>
+You have chimera. Below is your 'chimera:using-chimera' skill - how to find
+and use all other chimera skills (use the Skill tool for those):
+
+${content}
+</CHIMERA_BOOTSTRAP>"
+python3 - "$payload" <<'PY' || exit 0
+import json, sys
+print(json.dumps({"hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": sys.argv[1]}}))
+PY
