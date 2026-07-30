@@ -17,7 +17,9 @@ Default: {{build | exploration}}  (tasks may override at /start-task)
 [ADRs](docs/adr/)}}
 
 ## Conventions
-{{3-5 that differ from defaults; delete section if none}}
+- Feature work and multi-file changes happen on branches - enter via
+  /start-task, never directly on main.
+{{3-5 more that differ from defaults; delete if none}}
 
 ## Gotchas
 {{known traps: env quirks, data locations, slow tests; delete if none}}

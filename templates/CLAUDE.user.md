@@ -7,6 +7,9 @@
   PR bodies.
 - Subagents MUST NOT commit. The main agent reviews subagent work, then
   commits.
+- Feature work and multi-file changes happen on branches - enter via
+  /start-task, never directly on main. (Docs and small chores on main are
+  fine.)
 
 ## New projects
 - Always add `plans/` to `.gitignore` (plan files are working state).
