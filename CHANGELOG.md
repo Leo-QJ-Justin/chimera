@@ -4,6 +4,17 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.1.0] - 2026-07-30
+
+### Added
+- `creating-skills` skill — skill authoring synthesized from Anthropic's
+  skill-creator, Superpowers' writing-skills, and ECC's learn-eval gate:
+  should-this-exist verdict (Create/Absorb/Automate/Drop), format rules,
+  match-the-form-to-the-failure doctrine, and a test-before-deploy gate.
+  Makes chimera self-sufficient for skill authoring; the external
+  skill-creator plugin can be disabled. Routed from the bootstrap
+  ("Creating or editing a skill").
+
 ## [1.0.0] - 2026-07-29
 
 Initial release. A self-contained personal harness built per the

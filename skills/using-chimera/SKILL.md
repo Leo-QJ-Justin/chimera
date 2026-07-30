@@ -34,6 +34,7 @@ this skill.)
 | Bug, test failure, unexpected behavior | chimera:debugging-systematically |
 | About to claim done / fixed / passing | chimera:verifying-before-done |
 | Work complete, deciding integration | chimera:finishing-a-branch |
+| Creating or editing a skill | chimera:creating-skills |
 
 Process skills come first; they set the approach.
 

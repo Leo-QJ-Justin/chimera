@@ -130,6 +130,14 @@ evaluation metrics — exploration-mode findings — not unit tests.
   system-design). Produces the roadmap the loop consumes. See design spec
   §5.1.
 
+### W12. Create or edit a skill (added 2026-07-30, shipped in v1.1)
+- **Failure modes:** enthusiasm-driven skill sprawl (the 281-skill
+  cautionary tale); process-summarizing descriptions; skills deployed that
+  no agent ever failed without.
+- **Mechanism:** skill (`creating-skills`) — gate verdict
+  (Create/Absorb/Automate/Drop), format rules, match-the-form-to-the-
+  failure, test-before-deploy. Replaces the external skill-creator plugin.
+
 ## Deferred to v1.x (named, not built)
 
 - **W11. Capture learnings** — ECC-style `/learn` retro; first v1.x candidate
