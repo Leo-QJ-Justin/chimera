@@ -4,10 +4,20 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.2.1] - 2026-07-30
+
+### Changed
+- User-agnostic sweep: all operational surfaces (skills, agents, commands,
+  templates) and design docs now speak in role terms (the analyst, the
+  maintainer, your human partner) with no personal names or references to
+  past conversations. Author metadata in the plugin manifests is the only
+  remaining personal reference. Regression guards added: a user-agnostic
+  rule in `creating-skills` and a grep check in the smoke matrix.
+
 ## [1.2.0] - 2026-07-30
 
 ### Added
-- `skills/exploring-reproducibly/analysis-style.md` — Leo's analysis
+- `skills/exploring-reproducibly/analysis-style.md` — the analysis
   style contract (dash as structure never prose, de-hyphenated compounds,
   Observations & Findings cell format, decision tables before code,
   mandatory limitations close, chart conventions). Mined from the Micron
@@ -20,8 +30,7 @@ follows [SemVer](https://semver.org/).
 
 ### Deferred
 - Per-topic EDA playbooks (tabular, count, time series, geospatial,
-  text) — awaiting additional reference material from Leo before
-  drafting.
+  text) — awaiting additional reference material before drafting.
 
 ## [1.1.0] - 2026-07-30
 

@@ -1,15 +1,15 @@
 # analysis-style + eda-profiler — Task Spec
 
-**Mode:** build · **Approved:** in conversation, 2026-07-30 · **Evidence:**
+**Mode:** build · **Approved:** maintainer, 2026-07-30 · **Evidence:**
 [Micron](../research/2026-07-30-analysis-style-micron.md) and
 [Mindef](../research/2026-07-30-analysis-style-mindef.md) mining reports.
 
 ## Goal
 
-Encode Leo's analysis style as a reference file, and ship one mechanical
-profiling agent, so exploration-mode work writes in Leo's voice and starts
+Encode the maintainer's analysis style as a reference file, and ship one mechanical
+profiling agent, so exploration-mode work writes in the house style and starts
 from a drafted first pass. Per-topic EDA playbooks are explicitly DEFERRED
-(Leo has further resources to trawl first).
+(additional reference material is pending).
 
 ## Deliverables
 

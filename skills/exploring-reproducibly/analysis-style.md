@@ -1,7 +1,7 @@
 # Analysis Style Contract
 
-Leo's voice for notebooks, findings docs, and analysis reports. Load when
-writing any analysis prose, observation cell, or report section.
+The house style for notebooks, findings docs, and analysis reports. Load
+when writing any analysis prose, observation cell, or report section.
 Evidence base: docs/research/2026-07-30-analysis-style-micron.md and
 docs/research/2026-07-30-analysis-style-mindef.md.
 

@@ -1,4 +1,4 @@
-# Leo's Analysis Style — Mindef/QS Assessment Mining Report
+# Analysis Style Mining Report — Mindef/QS Assessment
 
 > Research artifact for chimera. Mined 2026-07-30 from the QS DS assessment
 > submission: q1 distribution fitting, q2 classification, q3 visualization,
@@ -134,10 +134,10 @@ Why it is here" (q2), "# | Assumption | Justification" (scenario2).
   Class Report", "The Collapse to a One Parameter Model", "zero truncated
   negative binomial", "non negative counts", "one hot expansion", "5 fold
   stratified cross validation"; "percent" spelled out instead of %.
-  This is the PURE FORM of Leo's stated no-hyphen preference.
+  This is the PURE FORM of the maintainer's stated no-hyphen preference.
 - scenario2 + all READMEs + Micron: hyphenated compounds and em dashes
   used freely as primary structure.
-- Codification decision (Leo, 2026-07-30): dashes are STRUCTURAL, never
+- Codification decision (maintainer, 2026-07-30): dashes are STRUCTURAL, never
   prose. Rationale: dash-heavy prose "sounds very AI". Allowed: dash as a
   separator (heading suffix "## 2.1 Bar Chart — Target Distribution",
   name — description pairs in trees/tables). Banned: em/en dashes as
@@ -145,8 +145,8 @@ Why it is here" (q2), "# | Assumption | Justification" (scenario2).
   analysis text (write "chi square test", "one parameter model"). The
   Section 2 notebooks are the reference form for prose; the Micron/
   scenario2 em-dash-in-prose habit is the deviation to avoid.
-- Playbooks decision (Leo, 2026-07-30): eda-playbooks DEFERRED — Leo has
-  additional resources to trawl before writing per-topic playbooks; do
+- Playbooks decision (maintainer, 2026-07-30): eda-playbooks DEFERRED — additional
+  reference material is pending before writing per-topic playbooks; do
   not draft them from this corpus alone.
 
 Headings: strictly numbered; `---` rule before every top-level `#`;
@@ -160,7 +160,7 @@ Every notebook ends with Limitations / Named assumptions & limitations.
 1. Decision tables committed before the code that implements them.
 2. `Observations & Findings:` as a fixed post-output cell — a bounded 2-4
    bullet read of THIS output, 43x across the corpus.
-3. Measuring his own intuition and reporting it losing.
+3. Measuring one's own intuition and reporting it losing.
 4. Naming the metric's blind spot in the same breath as the number.
 5. Simplifying the model downward after it fits.
 6. Declining to over-recommend below the analysis's resolution ("The

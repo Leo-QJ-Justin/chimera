@@ -10,6 +10,10 @@ rest).
 bash tests/test-branch-nudge.sh      # 7 cases, all PASS
 bash tests/test-session-start.sh     # JSON shape PASS
 python3 -c "import json;json.load(open('hooks/hooks.json'));json.load(open('.claude-plugin/plugin.json'));print('OK')"
+# user-agnostic guard: no personal names or conversation references in
+# operational surfaces (author metadata in manifests is the only allowed
+# personal reference)
+! grep -rn "Leo\b\|in conversation" skills commands agents templates README.md CHANGELOG.md | grep -v "Leo-QJ"
 ```
 
 ## 1. Bootstrap injection

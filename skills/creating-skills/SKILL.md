@@ -56,6 +56,11 @@ instead | Drop.** Only "Create" proceeds to Step 2.
   files — `@` force-loads at session start and burns context.
 - Cross-reference skills by namespace (`chimera:<name>`), never by bare
   path.
+- **User agnostic.** Skills, agents, commands, and templates speak in role
+  terms ("you", "your human partner", "the analyst", "the maintainer") —
+  never a personal name, and never a reference to a past conversation
+  ("as agreed", "per our discussion"). Decisions are recorded with a role
+  and a date.
 
 ## Step 3: Match the Form to the Failure
 

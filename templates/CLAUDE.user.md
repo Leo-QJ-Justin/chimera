@@ -1,4 +1,4 @@
-# Global preferences (Leo)
+# Global preferences
 
 ## Git
 - Conventional Commits: `type(scope): summary` - types: feat, fix, docs,

@@ -1,6 +1,6 @@
 # creating-skills — Task Spec
 
-**Mode:** build · **Approved:** in conversation, 2026-07-30 · **Roadmap:** n/a (chimera repo task)
+**Mode:** build · **Approved:** maintainer, 2026-07-30 · **Roadmap:** n/a (chimera repo task)
 
 ## Goal
 

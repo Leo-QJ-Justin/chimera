@@ -1,6 +1,6 @@
 # Chimera v1.0 — Complete Design Spec
 
-Status: DRAFT — pending Leo's review.
+Status: approved (maintainer review, 2026-07-29).
 Inputs: [workflow inventory](2026-07-29-workflow-inventory.md) (locked) +
 three deep-mining reports over `~/personal_projects/superpowers` (v6.2.0)
 and `~/personal_projects/ECC` (v2.1.0), preserved in full at:
@@ -47,7 +47,7 @@ dependency (memory is delegated, not rebuilt).
 | Procedural | required artifacts, gates, announce/todo forcing | plan docs, findings docs, review verdicts, typed `discard`, /start-task Phase 0 branch gate |
 | Enforced | deterministic hooks | bootstrap injection only |
 
-**Enforcement posture (Leo, 2026-07-29): hard gates live inside the feature
+**Enforcement posture (maintainer, 2026-07-29): hard gates live inside the feature
 loop; outside the loop, at most a quiet nudge.** Chimera never blocks work
 the user does directly on main (docs, chores, quick fixes). Discipline is
 opt-in by entering the loop — and strict once inside it.
@@ -126,7 +126,7 @@ v1.0 (no polyglot/multi-harness shims).
 
 ### 3.2 PreToolUse — branch nudge (warn-only)
 
-Decision (Leo, 2026-07-29): no ambient blocking. A hook that blocks everyday
+Decision (maintainer, 2026-07-29): no ambient blocking. A hook that blocks everyday
 edits on main (docs, chores, config) is more enforcement than wanted.
 Branch discipline is **loop-scoped**: the hard gate lives in `/start-task`
 Phase 0 and in skill text ("never start implementation on main without
@@ -234,7 +234,7 @@ No equivalent exists in either reference. Discipline for analysis/spike work:
    <adopt/reject/park> because <numbers>". The recorded decision is the
    deliverable.
 6. Exit paths: promotion rule (→ new build-mode task) or archive.
-7. **Notebook conventions** (Leo's standing preference, encoded once here
+7. **Notebook conventions** (a standing maintainer preference, encoded once here
    instead of per-project): EDA/analysis notebooks live in `notebooks/`,
    named `NN-topic.ipynb`, structured objective → data loading (pinned
    snapshot stated) → analysis → findings-summary cell mirroring the entry
@@ -267,7 +267,7 @@ dev):
   path re-runs tests on the merged result; cleanup only of self-created
   worktrees; **typed `discard`** quarantine for destruction; the 9-row
   rationalization table guarding the human decision point.
-- Chimera adjustments: PR path applies Leo's preferences (conventional-commit
+- Chimera adjustments: PR path applies the maintainer's preferences (conventional-commit
   title, no boilerplate footers, no co-author); exploration mode ends with
   findings-doc commit + decision, experiment code archived, not merged.
 
@@ -295,7 +295,7 @@ skill-creator when authoring; revisit at v1.x for /learn).
 
 ### 5.1 `/design-project` (W10 — project genesis; added 2026-07-29)
 
-Added after Leo's workflow walkthrough showed project genesis (brainstorm →
+Added after the maintainer's workflow walkthrough showed project genesis (brainstorm →
 PRD → architecture → system design) is a repeated workflow, and that system
 design — modules with expected inputs/outputs — was missing even from his
 pre-chimera process. One flow, type-aware in Phases 1, 2, and 4; the project
@@ -514,7 +514,7 @@ on ECC `/learn-eval`'s Save/Improve/Absorb/Drop quality gate, manual not
 automated) · language rules packs (v2) · multi-harness ports · model
 routing · SDD-style subagent orchestration · session-summary hooks
 (claude-mem's job). (`/design-project` was originally deferred here; moved
-into v1.0 on 2026-07-29 after Leo's workflow walkthrough evidenced project
+into v1.0 on 2026-07-29 after the maintainer's workflow walkthrough evidenced project
 genesis as a repeated workflow — see §5.1.)
 
 ## 11. Build order (Phase 3 plan outline)

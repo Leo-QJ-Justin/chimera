@@ -14,7 +14,7 @@ hard enforcement where instructions alone have failed.
 
 ## Architecture of the loop: two orthogonal axes
 
-**Altitude.** Two altitudes, both in scope (revised 2026-07-29 — Leo's
+**Altitude.** Two altitudes, both in scope (revised 2026-07-29 — the maintainer's
 workflow walkthrough evidenced project genesis as a repeated workflow, so
 the original "conversational only, defer to v1.x" position is retired).
 **Genesis** (`/design-project`, W10): brainstorm → PRD (app- or ML/CRISP-DM-
@@ -123,7 +123,7 @@ evaluation metrics — exploration-mode findings — not unit tests.
 ### W10. Design a project
 - **Failure modes:** greenfield ML/AI ideas built without a PRD; architecture
   chosen without tradeoff discussion; no system design (modules + I/O) — the
-  gap Leo identified in his own pre-chimera workflow; modeling choices
+  gap the maintainer identified in their own prior workflow; modeling choices
   settled by argument instead of experiment.
 - **Mechanism:** command (`/design-project`, 5 phases, type-aware:
   application | ML/CRISP-DM | hybrid) + templates (prd-app, prd-ml,
@@ -145,7 +145,7 @@ evaluation metrics — exploration-mode findings — not unit tests.
 
 ## Decided OUT of scope
 
-- **Backlog CLI tooling (e.g. beads/`bd`)** — CUT (Leo, 2026-07-29). Plan files carry
+- **Backlog CLI tooling (e.g. beads/`bd`)** — CUT (maintainer, 2026-07-29). Plan files carry
   multi-session state; reintroduce only with dogfooding evidence.
 - **Project resume** — covered by claude-mem + plan files + project CLAUDE.md.
 - **Cross-session memory** — claude-mem's job.

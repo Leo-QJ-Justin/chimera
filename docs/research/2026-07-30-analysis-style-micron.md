@@ -1,9 +1,9 @@
-# Leo's Analysis Style — Micron Assessment Mining Report
+# Analysis Style Mining Report — Micron Assessment
 
 > Research artifact for chimera. Mined 2026-07-30 from the Micron technical
 > assessment (tabular multi-class classification, severe imbalance; stack:
 > uv, pandas, seaborn, sklearn, lightgbm, torch, optuna). Purpose: evidence
-> base for codifying Leo's analysis style and EDA/training process into
+> base for codifying the maintainer's analysis style and EDA/training process into
 > chimera skills. Sibling: [Mindef report](2026-07-30-analysis-style-mindef.md).
 
 ## EDA processing steps, exact order (eda.ipynb)
@@ -115,7 +115,7 @@ fabricating synthetic minority points from as few as 23 real samples."
 - **Punctuation in THIS corpus:** em dash (—) as the signature clause
   join (43 uses in eda.ipynb md); en dash for ranges (`classes 1–4`);
   compound modifiers hyphenated freely (`near-perfect`, `row-normalised`).
-  NOTE: this CONTRADICTS the Mindef Section 2 notebooks and Leo's stated
+  NOTE: this CONTRADICTS the Mindef Section 2 notebooks and the maintainer's stated
   no-hyphen preference — see the Mindef report §hyphens for the split.
   Never ` - ` as clause separator, never `--`.
 - Negative results documented in a "Tested & Rejected" appendix, not
