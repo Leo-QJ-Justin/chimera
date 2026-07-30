@@ -577,6 +577,37 @@ injected `Optional[ChromaDBStore]` with per-modality chunk-size params. Uses
 a3/a6 code does. Flagged for the future LLM skeleton; the ABC +
 dataclass-record + injected-store pattern is the reusable part.
 
+## Addendum (2026-07-30): assignment5 `src/train.py` — the closest ancestor of the DL trainer
+
+Found after the main pass (assignment5 was not in the trawl plan's file
+list; surfaced by the maintainer's recollection of using an external early
+stopping library). On `origin/qjjustin_leo`,
+`assignment5/src/train.py::train_model` combines, in one function:
+
+- `from early_stopping_pytorch import EarlyStopping` (pinned in
+  `requirements.txt` as `early-stopping-pytorch`), wired as
+  `EarlyStopping(patience=3, verbose=True, path=best_model_path,
+  trace_func=logger.info)`. The library both tracks patience **and saves
+  the best `state_dict` to `path` on every val-loss improvement** — early
+  stopping and best-checkpoint persistence in one object, with logger
+  integration.
+- The canon MLflow wrappers (`mlflow_init`/`mlflow_log`/
+  `mlflow_pytorch_call`), `step_offset` resume-aware epoch range.
+- `torch.optim.lr_scheduler.StepLR`, Adam, config-driven
+  `model_checkpoint_dir_path`, sample-weighted loss accumulation
+  (`loss.item() * data.size(0)` / `len(dataset)`), tqdm-wrapped loops,
+  `pin_memory`/`num_workers` cuda kwargs.
+
+Gaps against the maintainer's stated preferences: train/validation loops
+are inlined rather than factored into `run_one_epoch`/`evaluate` helpers,
+and StepLR rather than a plateau scheduler. The target DL trainer is
+therefore: this function + epoch-helper factoring + `ReduceLROnPlateau` +
+`monitor: {name, mode}` checkpointing.
+
+Candidate for skeleton: **yes** — adopt `early-stopping-pytorch` rather
+than hand-rolling early stopping (decision: maintainer, 2026-07-30), and
+use this file as the base of the DL training module.
+
 ## Open questions for synthesis
 
 1. **Canon vs. merit.** §4's `co_varnames` filtering is canon *and*
