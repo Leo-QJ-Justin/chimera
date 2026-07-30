@@ -4,6 +4,25 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.2.0] - 2026-07-30
+
+### Added
+- `skills/exploring-reproducibly/analysis-style.md` — Leo's analysis
+  style contract (dash as structure never prose, de-hyphenated compounds,
+  Observations & Findings cell format, decision tables before code,
+  mandatory limitations close, chart conventions). Mined from the Micron
+  and Mindef assessment corpora (see docs/research/).
+- `eda-profiler` agent — mechanical first-pass dataset profiling (shape,
+  info, missing/cardinality frame, duplicate checks, robust describe
+  screens, target distribution), returning a draft in the style contract
+  with judgment calls flagged as questions, never decided. Wired into
+  exploring-reproducibly as an offer after Pin Everything.
+
+### Deferred
+- Per-topic EDA playbooks (tabular, count, time series, geospatial,
+  text) — awaiting additional reference material from Leo before
+  drafting.
+
 ## [1.1.0] - 2026-07-30
 
 ### Added

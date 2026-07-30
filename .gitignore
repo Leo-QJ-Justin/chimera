@@ -16,3 +16,6 @@ progress.md
 
 # OS
 Thumbs.db
+
+# local reference material, never committed
+*.zip

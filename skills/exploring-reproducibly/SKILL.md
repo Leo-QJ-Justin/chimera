@@ -38,6 +38,15 @@ Before the first computation:
 - **Environment** — note the interpreter/env name; pin versions if a result
   will feed a decision.
 
+## Profile First (new datasets)
+
+For a dataset you have not worked with before: dispatch the `eda-profiler`
+agent with the dataset path, the pinned snapshot note, and the target and
+key columns if known. It returns a draft `Observations & Findings` first pass
+(mechanical checks only) plus a `Judgment calls` list. Adapt the draft
+into the notebook; every judgment call is yours to rule on. This is an
+offer, not a gate: tiny or familiar data skips it.
+
 ## Log As You Go
 
 Findings live in `docs/findings/YYYY-MM-DD-<topic>.md` (committed). Each
@@ -62,6 +71,9 @@ with the reason recorded. This is the guard against endless fishing.
 
 ## Notebook Conventions
 
+- Prose, observation cells, and chart style follow the contract in
+  [analysis-style.md](analysis-style.md). Load it when writing any
+  analysis prose.
 - Notebooks live in `notebooks/`, named `NN-topic.ipynb` (ordered).
 - Structure: objective cell (from the brief) → data loading (pinned
   snapshot stated) → analysis → findings-summary cell mirroring the

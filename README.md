@@ -47,8 +47,10 @@ acceptance criteria. Spike code is never merged.
   (skill authoring with a should-this-exist gate — replaces the external
   skill-creator plugin)
 - **3 commands** — `/design-project`, `/start-task`, `/new-project`
-- **1 agent** — `code-reviewer` (read-only tools; confidence-gated; "zero
-  findings is a valid review"; build + exploration rubrics)
+- **2 agents** — `code-reviewer` (read-only tools; confidence-gated; "zero
+  findings is a valid review"; build + exploration rubrics) and
+  `eda-profiler` (mechanical first-pass dataset profiling, drafted in the
+  analysis style contract; judgment calls returned as questions)
 - **2 hooks** — SessionStart bootstrap injection (`startup|clear|compact`);
   warn-only branch nudge on source edits on main (never blocks;
   `CHIMERA_SILENCE_NUDGE=1` to mute)
