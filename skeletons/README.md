@@ -57,11 +57,11 @@ by definition.
 stable keys and fingerprints (`core/splits.py`) — seed + protocol is the
 generator, the artifact is the record.
 
-## Evaluation protocol decision table (D9, amended by R1.10)
+## Evaluation protocol decision table (D9, amended by R1.10 and R1.11)
 
 | Data regime | Split | Model comparison | Final fit |
 |---|---|---|---|
-| i.i.d. tabular, ample data | stratified shuffle + untouched test | per family (see below): CV on train+val for a family that ignores val, the val split for one that early-stops on it | fit on train+val, report test once |
+| i.i.d. tabular, ample data | stratified shuffle + untouched test | per family (see below): CV on train+val for a family that ignores val, the val split for one that early-stops on it — or one procedure-CV yardstick for all of them (`selection.basis: cv`) when families are being ranked against each other | fit on train+val, report test once |
 | i.i.d. tabular, small data | stratified shuffle | nested CV (inner tune, outer estimate) | choose per project: refit-on-all vs holdout — record the choice in the decision table |
 | Time series | temporal boundary, test touched once | expanding-window walk-forward | fit through the val boundary; never train on test period |
 | Grouped/hierarchical (entities repeat) | group-aware split on entity keys | GroupKFold | fit on train groups |
@@ -77,6 +77,18 @@ model on that pool, and select on a k-fold CV estimate of it — recorded as
 row, because a split that is inside the fit cannot be reported as held
 out. Test is untouched either way, and split membership is still recorded
 for all three splits.
+
+**Comparing families (R1.11).** Those two selection numbers estimate
+different things, so `best.json` refuses to rank one against the other.
+When the question *is* "which family wins", set `selection.basis: cv` on
+every candidate and point them at one `output_dir`: each run's selection
+number becomes a k-fold estimate in which every fold runs that family's
+entire training procedure (a family that early-stops carves its own
+stopping subset out of the fold's training rows — the chronological tail
+under temporal mode). Same folds, same measurement, so `best.json` ranks
+them and test is still untouched. Costs `trainer.tune.cv` extra fits per
+run, and a tuned candidate's estimate is optimistically biased (nested CV
+is the unbiased answer — Varma & Simon 2006).
 
 ## Scaffolding a project (what /design-project Phase 5 does)
 

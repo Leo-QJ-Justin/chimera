@@ -67,6 +67,21 @@ selection:
   metric: f1_macro
   mode: max
   split: val
+  # auto | cv  - which number best.json records (R1.11).
+  #
+  # `auto` is the per-family behaviour described above, and the two kinds of
+  # number deliberately do not rank against each other: a run that changes
+  # protocol inside one output_dir logs a warning and leaves best.json alone.
+  #
+  # `cv` puts every family on one yardstick: a k-fold estimate over train+val
+  # in which each fold runs the family's *entire* training procedure (a
+  # standing-val family's folds carve their own early-stopping subset, the
+  # chronological tail under temporal mode). Set it on every candidate, point
+  # them at one output_dir, and best.json ranks the families - without anyone
+  # reading test. It costs `trainer.tune.cv` extra fits per run, and the fit
+  # the run ships is unchanged (a standing-val family still trains on train
+  # with val as its referee, and still publishes train_/val_/test_ metrics).
+  basis: auto
 
 # Post-fit figures drawn from the fitted model itself, into
 # <run_dir>/plots/ (and therefore into MLflow, via the run-dir upload).

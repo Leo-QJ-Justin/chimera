@@ -69,9 +69,14 @@ torch:
   deterministic_cudnn: false
 
 tune:
-  # TorchTrainer overrides the base tuner: `cv` is ignored and each trial
-  # trains on a held-out split instead (see classes/torch_trainer.py), and
-  # `metric` is a project metric alias rather than a sklearn scoring string.
+  # TorchTrainer overrides the base tuner: `cv` is ignored *by the search*
+  # and each trial trains on a held-out split instead (see
+  # classes/torch_trainer.py), and `metric` is a project metric alias rather
+  # than a sklearn scoring string.
+  #
+  # `cv` is still read as the fold count of the selection CV under
+  # `selection.basis: cv` (R1.11) - which is k full epoch-loop fits, so
+  # budget for it before switching a torch run onto that basis.
   enabled: false
   n_trials: 10
   cv: 3

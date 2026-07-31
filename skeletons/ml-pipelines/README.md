@@ -110,6 +110,40 @@ both, and `metadata.json`'s `training_info` says which protocol ran
 only to the standing-val protocol; a pooled run logs one line saying it was
 ignored. Rationale and sources: R1.10 in the design spec.
 
+#### Comparing families: `selection.basis: cv`
+
+The two numbers above are deliberately not rankable against each other — a
+CV estimate and one split's score are different claims, and `best.json`
+refuses to compare them. `selection.basis: cv` is how you get one yardstick
+instead (R1.11):
+
+```bash
+python run_training.py trainer=random_forest selection.basis=cv
+python run_training.py trainer=lightgbm      selection.basis=cv
+python run_training.py trainer=mlp           selection.basis=cv
+```
+
+Same `output_dir`, same `split` config, same `trainer.tune.cv` fold count —
+and `best.json` names the winner, without anyone reading test. Under this
+basis every family's selection number is a **procedure** CV on the train+val
+pool: each fold builds a fresh trainer of the same spec and runs that
+family's real `train` on the fold's training rows, so what is being compared
+is "preprocess, early-stop, fit *this* family", which is the only thing two
+families can be compared as. A family whose fit needs a stopping referee
+carves one out of each fold's own training rows (15%, and the chronological
+**tail** under `split.mode: temporal` — a stopping criterion that has seen
+the future leaks silently). Its shipped fit is unchanged, and it still
+publishes `train_*`/`val_*`/`test_*`; only the number `best.json` reads
+moves, to `cv_<metric>`.
+
+The cost is `trainer.tune.cv` extra fits per run — for a torch run that is k
+full epoch loops, which the log says out loud. And the caveat: a *tuned*
+candidate's CV estimate used hyperparameters chosen on the same pool, so it
+is optimistically biased, unevenly across families. Compare untuned
+candidates, or give every candidate the same search budget and read the
+ranking as indicative; nested CV is the unbiased answer (Varma & Simon
+2006). Then refit the winner and report test once.
+
 ### Inference: metadata-first, trainer-agnostic
 
 `metadata.json` records `model_type`, which is the family key. The loader
@@ -202,7 +236,7 @@ hooks and two methods; the base gives them three services for free.
 | `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It picks the run's protocol (above), so the base annotates it without defaulting it and every family states its own — a new trainer that omits it fails the contract suite rather than inheriting a protocol nobody chose. |
 | `predict` / `predict_proba` | subclass / optional | `predict_proba` returns None when the family has none, rather than faking probabilities. |
 | `evaluate(X, y, metrics=…)` | **base** | So no family scores itself with its own metric definition. |
-| `cross_validate(X, y, cv, metrics)` | **base** | Fresh model per fold; the splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
+| `cross_validate(X, y, cv, metrics)` | **base** | A fresh **trainer** per fold running this family's real `train` — including, for a family that early-stops, a stopping subset carved out of that fold's own rows (R1.11). The splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
 | `hyperparameter_tune(...)` | **base** | Optuna over `_get_param_space`; winners are folded into `params` so the next `train` actually uses them. |
 | `log_model(tracker, example)` | subclass | The fitted model in that family's own MLflow flavor. See below. |
 | `save(run_dir) → files map` | subclass | Returns `{kind: filename}` verbatim for `metadata.json`. Filenames, never paths. |
@@ -223,7 +257,7 @@ lookup table has nowhere to put that.
 | `random_forest` | `RandomForestTrainer` | — | Classifier or regressor from the run's `task`. The shipped default. |
 | `lightgbm` | `LightGBMTrainer` | `lightgbm` | Its own fit path: `eval_set` early stopping needs the *transformed* validation matrix, which a `Pipeline`'s fit signature cannot carry. |
 | `xgboost` | `XGBoostTrainer` | `xgboost` | Same reason, different wiring — `early_stopping_rounds` is a constructor argument and raises without an `eval_set`, so it is attached only when there is a validation split. |
-| `torch` | `TorchTrainer` | `torch` | The DL harness (epoch loop, early stopping, `ReduceLROnPlateau`, NaN guard, checkpointing, device pinning, overfit-one-batch check) as internals in `modules/`. Overrides `cross_validate` (refuses: a torch module is not a sklearn estimator) and `hyperparameter_tune` (holdout per trial, not k-fold). |
+| `torch` | `TorchTrainer` | `torch` | The DL harness (epoch loop, early stopping, `ReduceLROnPlateau`, NaN guard, checkpointing, device pinning, overfit-one-batch check) as internals in `modules/`. Overrides `hyperparameter_tune` (a holdout per trial, not k-fold: there is no sklearn estimator to hand a scorer). Cross-validates like every other family — the base runs its epoch loop per fold. |
 
 What is shared is *plumbing*, not identity: `classes/sklearn_common.py`
 holds the `Pipeline(preprocess, model)` artifact mechanics — assemble,
@@ -371,3 +405,8 @@ verdict in the project's design doc, not in a comment):
   only if you want a family to depart from that — e.g. keeping a booster's
   val split out of the final fit permanently, or pooling for a family the
   scaffold does not ship.
+- **Cross-family comparison (R1.11).** Whether the project ranks families on
+  each one's own protocol (`selection.basis: auto`, cheap, and the two kinds
+  of number are then not comparable) or on one procedure-CV yardstick
+  (`selection.basis: cv`, k extra fits per run, one `best.json` for all of
+  them). Record which, because it changes what `best.json` means.

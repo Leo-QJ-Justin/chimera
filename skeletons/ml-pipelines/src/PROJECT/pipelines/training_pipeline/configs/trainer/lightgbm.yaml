@@ -27,6 +27,10 @@ tune:
   # Requires the `tune` extra (optuna). The tuning CV has no validation
   # split to early-stop on, so trials train the full n_estimators; the
   # early-stopped fit is what the final train produces.
+  #
+  # `cv` doubles as the fold count of the selection CV under
+  # `selection.basis: cv` (R1.11) - and that CV *does* early-stop, because
+  # each fold carves its own stopping subset out of its training rows.
   enabled: false
   n_trials: 20
   cv: 3

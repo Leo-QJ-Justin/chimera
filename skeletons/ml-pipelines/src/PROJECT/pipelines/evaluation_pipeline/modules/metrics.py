@@ -105,22 +105,27 @@ def compute_metrics(
 
 
 def cv_scoring(metric: str | Callable) -> dict[str, Callable]:
-    """One project metric as a sklearn scoring mapping, for cross-validation.
+    """One project metric as a sklearn scoring mapping.
 
-    ``cross_validate`` scores through sklearn's scorer protocol rather than
-    through :func:`compute_metrics`, so a project alias has to be *wrapped*
-    rather than named. Naming it would be wrong twice: ``"rmse"`` is not a
-    sklearn scoring string at all (it is ``neg_root_mean_squared_error``),
-    and reaching for sklearn's own string would re-decide what the alias
-    means - which is precisely what this module exists to prevent. A CV
-    estimate that decides ``best.json`` has to be the same measurement the
-    evaluation report prints.
+    The bridge for sklearn's own machinery - ``sklearn.cross_validate``,
+    ``GridSearchCV``, the base trainer's Optuna objective - which scores
+    through the scorer protocol rather than through :func:`compute_metrics`,
+    so a project alias has to be *wrapped* rather than named. Naming it
+    would be wrong twice: ``"rmse"`` is not a sklearn scoring string at all
+    (it is ``neg_root_mean_squared_error``), and reaching for sklearn's own
+    string would re-decide what the alias means - which is precisely what
+    this module exists to prevent.
+
+    ``BaseTrainer.cross_validate`` needs no scorer: it runs the family's own
+    procedure per fold and scores the fold through :func:`compute_metrics`
+    directly, so it takes metric *names*. Either way the measurement behind
+    ``best.json`` is the one the evaluation report prints.
 
     Args:
         metric: A project metric name (or callable), as ``selection.metric``.
 
     Returns:
-        ``{name: scorer}``, ready to pass as ``cross_validate``'s ``metrics``.
+        ``{name: scorer}``, for any sklearn API that takes ``scoring=``.
 
     Note:
         ``greater_is_better=True`` is not a claim about the metric; it only

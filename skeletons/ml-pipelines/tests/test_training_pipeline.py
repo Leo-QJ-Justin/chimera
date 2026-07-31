@@ -338,6 +338,90 @@ class TestProtocols:
         assert searched["rows"] == len(load_splits(run_dir)["splits"]["train"])
 
 
+class TestCrossComparableSelection:
+    """``selection.basis: cv`` (R1.11): one yardstick for every family.
+
+    The default (``auto``) is R1.10's per-family behaviour, asserted above.
+    What this class asserts is the opt-in: a standing-val family keeps the
+    fit its early stopping needs *and* publishes the same CV number a pooled
+    family does, so the two rank in one output dir without touching test.
+    """
+
+    @needs_trainer("lightgbm")
+    def test_a_standing_val_family_keeps_its_fit_and_selects_on_cv(
+        self, tmp_path, processed_file
+    ):
+        config = make_training_config(
+            tmp_path, processed_file, LIGHTGBM_TRAINER, selection={"basis": "cv"}
+        )
+        run_dir = TrainingPipeline(config).run()
+        info = load_metadata(run_dir)["training_info"]
+        logged = _sidecar_metrics(run_dir)
+        best = get_best_info(config.output_dir)
+
+        # The shipped fit is untouched: train only, val still the referee.
+        assert info["fit_splits"] == ["train"]
+        assert info["n_fit_rows"] == len(load_splits(run_dir)["splits"]["train"])
+        assert {"train_f1_macro", "val_f1_macro", "test_f1_macro"} <= logged
+        # The selection number is the procedure-CV estimate on train+val.
+        assert info["selection_basis"] == "cv"
+        assert best["metric"] == "cv_f1_macro"
+        assert best["value"] == info["metrics"]["cv_f1_macro"]
+        assert f"cv_{config.selection.metric}_std" in info["metrics"]
+        # Its own number, not the standing-val score relabelled.
+        assert best["value"] != info["metrics"]["val_f1_macro"]
+
+    @needs_trainer("lightgbm")
+    def test_two_families_rank_against_each_other_in_one_output_dir(
+        self, tmp_path, processed_file, caplog
+    ):
+        """The whole point: a pooled family and a standing-val one, one best."""
+        import logging
+        import time
+
+        outputs = str(tmp_path / "outputs" / "comparison")
+        cv_values = {}
+        with caplog.at_level(logging.WARNING):
+            for trainer in (RANDOM_FOREST_TRAINER, LIGHTGBM_TRAINER):
+                config = make_training_config(
+                    tmp_path,
+                    processed_file,
+                    trainer,
+                    output_dir=outputs,
+                    selection={"basis": "cv"},
+                    diagnostics={"shap": {"enabled": False}},
+                )
+                run_dir = TrainingPipeline(config).run()
+                metrics = load_metadata(run_dir)["training_info"]["metrics"]
+                cv_values[trainer["kind"]] = metrics["cv_f1_macro"]
+                # Run timestamps are second-granular and make_run_dir refuses
+                # a collision, so the second run has to start a second later.
+                time.sleep(1.1)
+
+        # Same metric key, so the pointer ranks instead of refusing.
+        assert "best.json left unchanged" not in caplog.text
+        best = get_best_info(outputs)
+        assert best["metric"] == "cv_f1_macro"
+        assert best["value"] == max(cv_values.values())
+
+    def test_a_pooled_family_is_unaffected_by_the_knob(self, tmp_path, processed_file):
+        """A pooled run is already on the CV basis; ``cv`` changes nothing."""
+        runs = {}
+        for basis in ("auto", "cv"):
+            config = make_training_config(
+                tmp_path,
+                processed_file,
+                RANDOM_FOREST_TRAINER,
+                output_dir=str(tmp_path / "outputs" / basis),
+                selection={"basis": basis},
+            )
+            info = load_metadata(TrainingPipeline(config).run())["training_info"]
+            runs[basis] = (info["selection_basis"], info["metrics"])
+
+        assert runs["auto"][0] == runs["cv"][0] == "cv"
+        assert runs["auto"][1] == runs["cv"][1]
+
+
 class TestDiagnostics:
     """Post-fit figures: what each family can produce, and the kill switch."""
 

@@ -31,6 +31,13 @@ family's own ``uses_val_in_fit`` flag rather than by its name (R1.10):
 Both record train/val/test membership in ``splits.json`` either way: the
 pool is built at fit time and the split is still the reproducible record.
 
+``selection.basis: cv`` overlays one thing on top of that (R1.11): a
+standing-val family still fits exactly as above - its early stopping needs
+the referee - but it *also* runs a procedure CV on train+val and selects on
+that, so its ``best.json`` number is the same yardstick a pooled family's
+is and the two families can be ranked in one output directory without
+anyone reading test.
+
     outputs/training/<timestamp>/
         <trainer's files>   whatever save() wrote, named in metadata
         splits.json         realized membership by stable key + fingerprints
@@ -62,7 +69,7 @@ from ...core.timing import stage_timer
 from ...core.tracking import init_tracking
 from ...schemas import TrainingConfig
 from ..data_pipeline.classes.dataset_writer import load_manifest
-from ..evaluation_pipeline.modules.metrics import cv_scoring, log_metrics, prefixed
+from ..evaluation_pipeline.modules.metrics import log_metrics, prefixed
 from .classes import build_trainer
 from .modules.diagnostics import run_diagnostics
 from .modules.splitting import record_splits, resolve_feature_columns, split_frame
@@ -163,12 +170,20 @@ class TrainingPipeline:
         """The frames the search and the final fit see, per protocol.
 
         Standing val: train only, because val has to stay outside the fit
-        to referee the early stopping inside it. Pooled: train+val
-        concatenated in split order, so a temporal run's pool is still
-        chronological and the rows keep their keys.
+        to referee the early stopping inside it. Pooled: the train+val pool.
         """
         if trainer.uses_val_in_fit:
             return X["train"], y["train"]
+        return self._pool(X, y)
+
+    @staticmethod
+    def _pool(X: dict, y: dict) -> tuple:
+        """train+val concatenated in split order.
+
+        Order matters: a temporal run's pool stays chronological, which is
+        what lets a CV fold carve its stopping subset off the end of its own
+        training window rather than out of the middle of it.
+        """
         return pd.concat([X["train"], X["val"]]), pd.concat([y["train"], y["val"]])
 
     def _fit(self, tracker, trainer, X: dict, y: dict) -> tuple:
@@ -201,9 +216,13 @@ class TrainingPipeline:
         so ``selection.split`` is ignored and the CV estimate decides;
         the ``cv_`` prefix is what keeps the two kinds of number from being
         silently ranked against each other.
+
+        ``selection.basis: cv`` puts every family on the CV basis instead -
+        the point being that runs of different families then carry the same
+        metric key and *do* rank against each other (R1.11).
         """
         selection = self.config.selection
-        if trainer.uses_val_in_fit:
+        if trainer.uses_val_in_fit and selection.basis != "cv":
             return selection.split, f"{selection.split}_{selection.metric}"
         return "cv", f"cv_{selection.metric}"
 
@@ -227,9 +246,30 @@ class TrainingPipeline:
 
     def _evaluate(self, tracker, trainer, X: dict, y: dict, X_fit, y_fit) -> dict:
         """Score the run, in whichever terms its protocol can defend."""
-        if trainer.uses_val_in_fit:
-            return self._evaluate_splits(trainer, X, y)
-        return self._evaluate_pool(tracker, trainer, X, y, X_fit, y_fit)
+        if not trainer.uses_val_in_fit:
+            return self._evaluate_pool(tracker, trainer, X, y, X_fit, y_fit)
+        metrics = self._evaluate_splits(trainer, X, y)
+        if self.config.selection.basis == "cv":
+            metrics.update(self._comparable_cv(tracker, trainer, X, y))
+        return metrics
+
+    def _comparable_cv(self, tracker, trainer, X: dict, y: dict) -> dict[str, float]:
+        """The cross-comparable number for a standing-val family (R1.11).
+
+        The fit above is untouched - this family's early stopping still
+        needs its standing referee - but the number ``best.json`` records
+        becomes a procedure CV over the train+val pool, where each fold
+        carves its own referee. That is what a pooled family's ``cv_``
+        number already is, so the two rank against each other.
+        """
+        logger.info(
+            "selection.basis=cv: %s keeps its standing-val fit, and best.json "
+            "reads a procedure-CV estimate on train+val instead of %s_%s",
+            trainer.model_type,
+            self.config.selection.split,
+            self.config.selection.metric,
+        )
+        return self._cv_estimate(tracker, trainer, *self._pool(X, y))
 
     def _evaluate_splits(self, trainer, X: dict, y: dict) -> dict[str, float]:
         """Score every split; train included as the overfitting reference."""
@@ -266,18 +306,17 @@ class TrainingPipeline:
             split_metrics = trainer.evaluate(frame, target)
             log_metrics(split_metrics, name)
             metrics.update(prefixed(split_metrics, name))
-        with stage_timer("selection_cv", tracker):
-            metrics.update(self._cv_estimate(trainer, X_fit, y_fit))
+        metrics.update(self._cv_estimate(tracker, trainer, X_fit, y_fit))
         return metrics
 
-    def _cv_estimate(self, trainer, X_pool, y_pool) -> dict[str, float]:
-        """The pooled protocol's selection number: k-fold CV on the pool.
+    def _cv_estimate(self, tracker, trainer, X_pool, y_pool) -> dict[str, float]:
+        """The CV selection number: the family's own procedure, k times.
 
-        A fresh pipeline per fold (the base's leak-safe path), split by the
-        run's own ``split.mode`` (D9), over the same rows the saved model
-        was fitted on - so the estimate describes the model the run ships,
-        not a different one. Fold count comes from ``trainer.tune.cv``: it
-        is the run's declared CV budget whether or not the search ran.
+        A fresh trainer per fold running the family's real ``train`` (R1.11),
+        split by the run's own ``split.mode`` (D9), over the pool - so the
+        estimate describes the procedure the run ships, not a cheaper stand-in
+        for it. Fold count comes from ``trainer.tune.cv``: it is the run's
+        declared CV budget whether or not the search ran.
 
         The std travels with the mean because a selection criterion is a
         random variable: two runs 0.002 apart on a fold spread of 0.05 have
@@ -285,9 +324,10 @@ class TrainingPipeline:
         """
         selection = self.config.selection
         folds = self.config.trainer.tune.cv
-        results = trainer.cross_validate(
-            X_pool, y_pool, cv=folds, metrics=cv_scoring(selection.metric)
-        )
+        with stage_timer("selection_cv", tracker):
+            results = trainer.cross_validate(
+                X_pool, y_pool, cv=folds, metrics=[selection.metric]
+            )
         stats = results[selection.metric]
         logger.info(
             "CV estimate on train+val: %s = %.4f +/- %.4f over %d folds",
@@ -428,8 +468,8 @@ class TrainingPipeline:
             # different things, and the pointer refuses to rank one against
             # the other - correctly. But that refusal arrives after the fit,
             # so it warns rather than costing the run everything it already
-            # wrote; latest.json still resolves to this run. To compare two
-            # protocols, give them separate output_dirs (or compare on test).
+            # wrote; latest.json still resolves to this run. To rank families
+            # in one output_dir, run them all with selection.basis=cv (R1.11).
             logger.warning("best.json left unchanged: %s", e)
             return
         logger.info(

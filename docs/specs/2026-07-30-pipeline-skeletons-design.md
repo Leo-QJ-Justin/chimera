@@ -434,6 +434,73 @@ Algorithm Selection* (three-way holdout for large data and deep learning
 where refitting is expensive and a monitor split is needed; k-fold for
 small-to-moderate data), Cawley & Talbot 2010, Varma & Simon 2006.
 
+**R1.11 (follow-up, 2026-08-01): every family cross-validates its whole
+procedure, and `selection.basis` makes the estimate cross-comparable.**
+R1.10 left two kinds of selection number in circulation — a pooled
+family's `cv_<metric>` and a standing-val family's `val_<metric>` — which
+is correct (they estimate different things, and `best.json` refuses to
+rank one against the other) but leaves no way to answer "is the booster
+better than the forest?" without reading test. Reading test to choose a
+model is exactly what test is not for.
+
+*The principle: the procedure goes inside the fold.* `cross_validate` is
+no longer sklearn's, applied to an estimator; it is a loop that builds a
+**fresh trainer of the same spec per fold** and runs the family's real
+`train` on that fold's training rows. For a family whose fit needs a
+stopping referee (`uses_val_in_fit = True`), the fold's training portion
+carves out its own stopping subset (15% by default) and the fit
+early-stops on *that*. The run's standing val split plays no part inside
+CV — if every fold stopped against the same standing rows, those rows
+would be inside all k fits and the fold scores would not be out-of-sample.
+What is being estimated is the *procedure* ("preprocess, early-stop, fit
+this family"), which is the only thing two different families can be
+compared as.
+
+*The temporal rule.* Under `cv_mode: temporal` the carve is the
+chronological **tail** of the fold's training window, never a random
+subset: a stopping criterion that has seen the future is the leak D9
+exists to prevent, and it leaks silently — the curve looks better, not
+broken. Stratified mode carves a stratified random subset, shuffle mode a
+plain random one, both on the run's seed. The carve is deliberately *not*
+group-aware (documented on the method): under `cv_mode: group` a group can
+straddle a fold's fit/stop boundary, which is a real limitation and a
+smaller one than pretending otherwise.
+
+This also removes the torch exemption. `TorchTrainer` previously refused
+`cross_validate` outright because a torch module is not a sklearn
+estimator; the generic loop never needs one, so torch cross-validates like
+everything else, at k full epoch-loop fits, with the cost stated in a log
+line rather than hidden.
+
+*The knob.* `selection.basis: auto | cv` (default `auto` = R1.10's
+per-family behaviour, byte-identical). Under `cv`, a standing-val family
+still **fits** with its standing val — its early stopping needs the
+referee, and its `train_*`/`val_*`/`test_*` metrics are unchanged — but
+its **selection** number becomes a procedure-CV estimate over the train+val
+pool, logged as `cv_<metric>` (+ `_std`) and written to `best.json`.
+That is the identical yardstick a pooled family already publishes, so the
+metric keys match and the pointer ranks them instead of refusing.
+
+The cross-family comparison workflow is therefore:
+
+1. Give every candidate `selection.basis: cv`, the same `split` config and
+   the same `trainer.tune.cv` fold count.
+2. Point all their runs at **one** `output_dir`.
+3. `best.json` names the winner, on one metric, measured the same way for
+   all of them. Nobody has read test.
+4. Refit the winner through the normal training pipeline and report test
+   **once**.
+
+Caveat, unchanged from R1.10 and now sharper because candidates are being
+ranked: if a candidate was tuned, its CV estimate was computed with
+hyperparameters chosen on the same pool, so it is optimistically biased —
+and the bias is not the same size for every family, which is what makes it
+a comparison problem rather than a constant offset. Nested CV (inner loop
+tunes, outer loop estimates) is the unbiased answer (Varma & Simon 2006);
+the honest cheap alternative is to compare *untuned* candidates, or to
+give every candidate the same search budget and treat the ranking as
+indicative. Test remains untouched under all of it.
+
 ## Build plan (next task, via /start-task)
 
 1. `skeletons/` in chimera: `core/` utils package first (D3, D8, D10, D11,

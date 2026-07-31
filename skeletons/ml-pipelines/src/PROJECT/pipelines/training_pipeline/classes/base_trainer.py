@@ -17,7 +17,9 @@ Four decisions the rest of the file assumes:
   because three shipped trainers need it during the fit (LightGBM and
   XGBoost early stopping, torch's per-epoch monitor). A trainer with no
   use for it ignores it - and says so through ``uses_val_in_fit``, which
-  is what picks the run's tuning and selection protocol (R1.10).
+  is what picks the run's tuning and selection protocol (R1.10) and, inside
+  ``cross_validate``, whether each fold carves its own stopping subset
+  (R1.11).
 - **``predict_proba`` may return None.** The inference pipeline degrades to
   hard predictions rather than making every family fake probabilities.
 - **One artifact, named in metadata.** ``save`` returns the
@@ -38,6 +40,7 @@ from typing import Any, ClassVar
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import cross_validate as sk_cross_validate
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 
 from ....core.run_artifacts import load_metadata
@@ -47,12 +50,13 @@ from ..modules.splitting import make_cv_splitter
 
 logger = logging.getLogger(__name__)
 
-# sklearn *scoring* strings (not metric-function names) for CV and tuning.
-CV_SCORING = {
-    "classification": ["accuracy", "f1_macro"],
-    "regression": ["neg_root_mean_squared_error", "neg_mean_absolute_error", "r2"],
-}
+# sklearn *scoring* strings (not metric-function names), for the tuner -
+# which scores through sklearn's own cross_validate.
 TUNE_METRIC = {"classification": "f1_macro", "regression": "neg_root_mean_squared_error"}
+# Share of each CV fold's training rows carved out as the early-stopping
+# referee, for families whose fit needs one (R1.11). Matches the standing
+# val split's share of the run, so a fold's fit is shaped like the real one.
+CV_STOP_FRACTION = 0.15
 
 
 def _import_optuna():
@@ -222,41 +226,123 @@ class BaseTrainer(ABC):
         X: pd.DataFrame,
         y,
         cv: int | Any = 5,
-        metrics: list[str] | dict[str, Any] | None = None,
-    ) -> dict[str, dict[str, float]]:
-        """Cross-validate a **fresh** model per fold.
+        metrics: list[str | Callable] | None = None,
+        stop_fraction: float = CV_STOP_FRACTION,
+    ) -> dict[str, dict[str, float | list[float]]]:
+        """Cross-validate the **whole training procedure**, fold by fold.
+
+        Every fold builds a fresh trainer of this spec and runs the
+        family's real :meth:`train` on the fold's training rows - including,
+        for a family whose fit needs a stopping referee, a carve-out taken
+        from *inside* those rows (R1.11). The run's standing validation
+        split plays no part here, which is what makes the estimate
+        comparable across families: every candidate is measured by the same
+        procedure on the same folds, and none of them has seen test.
+
+        The cost is honest and unhidden: ``cv`` full fits of this family,
+        early stopping and all.
 
         Args:
             X: Features.
             y: Target.
             cv: Fold count (the splitter then follows ``cv_mode``, per D9)
                 or an explicit sklearn splitter.
-            metrics: sklearn *scoring* strings, or a ``{name: scorer}``
-                mapping (what
-                ``evaluation_pipeline.modules.metrics.cv_scoring`` builds,
-                so a project alias with no sklearn scoring string still
-                means one thing). None -> the task defaults.
+            metrics: Project metric names or callables, exactly as
+                :meth:`evaluate` takes them - so a fold score is the same
+                measurement the report and ``best.json`` print. None -> the
+                task defaults.
+            stop_fraction: Share of a fold's training rows carved out as
+                the early-stopping referee. Ignored by families whose fit
+                does not use one.
 
         Returns:
-            ``{scoring_name: {"mean": ..., "std": ...}}``.
+            ``{metric: {"mean": ..., "std": ..., "values": [per fold]}}``.
+            The spread travels with the mean because a fold mean is a
+            random variable, not a measurement (Cawley & Talbot 2010).
         """
-        metrics = metrics or CV_SCORING[self.task]
-        results = sk_cross_validate(
-            self._cv_estimator(),
-            self.align(X),
-            y,
-            cv=self._splitter(cv),
-            scoring=metrics,
-            return_train_score=False,
+        X_aligned = self.align(X)
+        y_values = np.asarray(y)
+        splitter = self._splitter(cv)
+        folds = splitter.get_n_splits(X_aligned, y_values)
+        logger.info(
+            "Cross-validating %s: %d full fits%s",
+            self.model_type,
+            folds,
+            ", each carving its own stopping subset" if self.uses_val_in_fit else "",
         )
-        logger.info("Cross-validated %s over %s folds", self.model_type, cv)
+
+        scores: dict[str, list[float]] = {}
+        for fold, (fit_rows, held_rows) in enumerate(splitter.split(X_aligned, y_values)):
+            candidate = self.fresh()
+            X_fold, y_fold = X_aligned.iloc[fit_rows], y_values[fit_rows]
+            if self.uses_val_in_fit:
+                carved = self._carve_stopping_subset(X_fold, y_fold, stop_fraction)
+                candidate.train(*carved)
+            else:
+                candidate.train(X_fold, y_fold)
+            fold_scores = candidate.evaluate(
+                X_aligned.iloc[held_rows], y_values[held_rows], metrics=metrics
+            )
+            logger.debug("Fold %d/%d: %s", fold + 1, folds, fold_scores)
+            for name, value in fold_scores.items():
+                scores.setdefault(name, []).append(value)
+
+        logger.info("Cross-validated %s over %d folds", self.model_type, folds)
         return {
-            metric: {
-                "mean": float(np.mean(results[f"test_{metric}"])),
-                "std": float(np.std(results[f"test_{metric}"])),
+            name: {
+                "mean": float(np.mean(values)),
+                "std": float(np.std(values)),
+                "values": [float(v) for v in values],
             }
-            for metric in metrics
+            for name, values in scores.items()
         }
+
+    def _carve_stopping_subset(self, X_fold, y_fold, fraction: float) -> tuple:
+        """A fold's rows split into ``(X_fit, y_fit, X_stop, y_stop)``.
+
+        The referee a standing-val family's fit needs, taken from inside
+        the fold. Reusing the run's standing val split instead would let
+        every fold stop against the same rows, and a fold score is only an
+        out-of-sample number if nothing about the fit saw those rows.
+
+        Temporal mode carves the chronological **tail** of the fold: a
+        stopping criterion that has seen the future is the leak D9 exists
+        to prevent, and the rows arrive in split order. Stratified mode
+        carves a stratified random subset, anything else a plain random
+        one - both on the trainer's seed, so folds reproduce.
+
+        Known limitation: the carve is not group-aware, so under
+        ``cv_mode="group"`` one group's rows can land on both sides of a
+        fold's fit/stop boundary. Pass an explicit splitter and pre-grouped
+        frames if that matters for the problem.
+        """
+        n_stop = min(max(1, round(len(X_fold) * fraction)), len(X_fold) - 1)
+        if self.cv_mode == "temporal":
+            cut = len(X_fold) - n_stop
+            fit_rows, stop_rows = np.arange(cut), np.arange(cut, len(X_fold))
+        else:
+            stratify = y_fold if self.cv_mode == "stratified" else None
+            fit_rows, stop_rows = train_test_split(
+                np.arange(len(X_fold)),
+                test_size=n_stop,
+                random_state=self.seed,
+                stratify=stratify,
+            )
+        return (
+            X_fold.iloc[fit_rows],
+            y_fold[fit_rows],
+            X_fold.iloc[stop_rows],
+            y_fold[stop_rows],
+        )
+
+    def fresh(self) -> "BaseTrainer":
+        """An unfitted twin: same family, params, task, seed, features.
+
+        The round trip through :meth:`spec` is the point - it is the same
+        description :meth:`load` rebuilds a saved run from, so a fold's
+        trainer cannot quietly differ from the one the run ships.
+        """
+        return type(self).from_spec(self.spec())
 
     def hyperparameter_tune(
         self,
@@ -334,11 +420,13 @@ class BaseTrainer(ABC):
         )
 
     def _cv_estimator(self, overrides: dict | None = None):
-        """A fresh, unfitted, sklearn-compatible pipeline for CV/tuning.
+        """A fresh, unfitted, sklearn-compatible pipeline for the tuner.
 
         Preprocessing is *inside* it so every fold refits its own imputers
         and encoders - the leakage-as-architecture fix (D6). Trainers whose
-        model is not sklearn-compatible override this and say so.
+        model is not sklearn-compatible override this and say so;
+        :meth:`cross_validate` no longer needs it, because it runs the
+        family's own procedure per fold instead.
         """
         model = self._build_model()
         if overrides:

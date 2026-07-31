@@ -275,6 +275,14 @@ class SelectionConfig(BaseModel):
     metric: str = "f1_macro"
     mode: Literal["min", "max"] = "max"
     split: Literal["val", "test"] = "val"
+    # Which number best.json records (R1.11). "auto": each family's own
+    # protocol decides - a standing-val family selects on `split`, a pooled
+    # one on its CV estimate, and the two are deliberately not rankable
+    # against each other. "cv": every family selects on a procedure-CV
+    # estimate over train+val, which is the one yardstick runs of different
+    # families can be ranked on - at the cost of k extra fits for a
+    # standing-val family, whose train_/val_/test_ metrics are unchanged.
+    basis: Literal["auto", "cv"] = "auto"
 
 
 class ShapConfig(BaseModel):

@@ -21,6 +21,7 @@ from conftest import (
     LOGREG_TRAINER,
     RANDOM_FOREST_TRAINER,
     TEST_SEED,
+    TEST_TARGET,
     TEST_TRAIN_SIZE,
     TORCH_TRAINER,
     XGBOOST_TRAINER,
@@ -37,20 +38,37 @@ needs_tune = needs("optuna", reason="the 'tune' extra")
 
 TRAINER_SPECS = trainer_params()
 
-# Everything except torch: the base's CV/tuning path needs a sklearn-shaped
-# estimator, which TorchTrainer deliberately refuses to fake.
+# Everything except torch: the base *tuner* scores through sklearn's
+# cross_validate, which needs a sklearn-shaped estimator - and TorchTrainer
+# deliberately refuses to fake one, overriding the tuner instead. Procedure
+# cross-validation is not on this list: every family has it (R1.11).
 SKLEARN_API_SPECS = [p for p in TRAINER_SPECS if p.id != "torch"]
 
 
-def _build(spec: dict, features: dict, **overrides):
+def _build(spec: dict, features: dict, *, cv_mode: str = "stratified", **overrides):
     return build_trainer(
         TrainerConfig(**spec),
         task="classification",
         seed=TEST_SEED,
-        cv_mode="stratified",
+        cv_mode=cv_mode,
         **features,
         **overrides,
     )
+
+
+def _spy_on_fold_fits(monkeypatch, kind: str) -> list[dict]:
+    """Record what each fold's fresh trainer was handed, then fit for real."""
+    trainer_cls = get_trainer_class(kind)
+    original = trainer_cls.train
+    calls: list[dict] = []
+
+    def spy(self, X, y, X_val=None, y_val=None, **kwargs):
+        result = original(self, X, y, X_val, y_val, **kwargs)
+        calls.append({"trainer": self, "X": X, "X_val": X_val})
+        return result
+
+    monkeypatch.setattr(trainer_cls, "train", spy)
+    return calls
 
 
 @pytest.mark.parametrize("spec", TRAINER_SPECS)
@@ -165,24 +183,101 @@ class TestContract:
         assert get_trainer_class(trainer.model_type) is type(trainer)
 
 
-@pytest.mark.parametrize("spec", SKLEARN_API_SPECS)
-class TestCrossValidationAndTuning:
-    def test_cross_validate_reports_mean_and_std(self, spec, features, xy):
+@pytest.mark.parametrize("spec", TRAINER_SPECS)
+class TestProcedureCrossValidation:
+    """Every family cross-validates by running its own procedure per fold.
+
+    The acid test of R1.11: no family is excused (torch included), and the
+    numbers come back in one shape, which is what makes runs of different
+    families rankable against each other.
+    """
+
+    def test_cross_validate_reports_mean_std_and_per_fold_values(
+        self, spec, features, xy
+    ):
         X_train, y_train, _, _ = xy
         trainer = _build(spec, features)
 
-        results = trainer.cross_validate(X_train, y_train, cv=3)
+        results = trainer.cross_validate(X_train, y_train, cv=2)
         assert set(results) == {"accuracy", "f1_macro"}
-        assert all({"mean", "std"} == set(v) for v in results.values())
+        for stats in results.values():
+            assert {"mean", "std", "values"} == set(stats)
+            per_fold = stats["values"]
+            assert isinstance(per_fold, list) and len(per_fold) == 2
 
     def test_cross_validate_does_not_fit_the_trainer(self, spec, features, xy):
-        # A fresh model per fold is the whole point; the trainer's own model
-        # must be untouched afterwards.
+        # A fresh trainer per fold is the whole point; the trainer the caller
+        # holds must be untouched afterwards.
         X_train, y_train, _, _ = xy
         trainer = _build(spec, features)
-        trainer.cross_validate(X_train, y_train, cv=3)
+        trainer.cross_validate(X_train, y_train, cv=2)
         assert not trainer.fitted
 
+    def test_a_fold_trainer_is_an_unfitted_twin_of_this_one(self, spec, features):
+        """``fresh`` must reproduce the spec, not a default-constructed twin."""
+        trainer = _build(spec, features)
+        twin = trainer.fresh()
+
+        assert type(twin) is type(trainer)
+        assert twin.spec()["params"] == trainer.spec()["params"]
+        assert twin.feature_columns == trainer.feature_columns
+        assert (twin.task, twin.seed, twin.cv_mode) == (
+            trainer.task,
+            trainer.seed,
+            trainer.cv_mode,
+        )
+        assert not twin.fitted
+
+
+class TestFoldStoppingSubsets:
+    """A standing-val family early-stops *inside* the fold, on its own rows.
+
+    Reusing the run's standing val split would make every fold stop against
+    the same rows; carving one out of the fold's training portion is what
+    keeps a fold score out-of-sample (R1.11).
+    """
+
+    @needs_trainer("lightgbm")
+    def test_every_fold_fit_receives_a_stopping_subset(self, features, xy, monkeypatch):
+        calls = _spy_on_fold_fits(monkeypatch, "lightgbm")
+        # Far more rounds than these folds can keep improving on, so stopping
+        # has to fire inside each one for best_iteration to land short.
+        trainer = _build(
+            {**LIGHTGBM_TRAINER, "params": {"n_estimators": 400, "verbose": -1}}, features
+        )
+        trainer.cross_validate(xy[0], xy[1], cv=3)
+
+        assert len(calls) == 3
+        for call in calls:
+            assert call["X_val"] is not None, "the fold fit got no stopping subset"
+            fold_rows = len(call["X"]) + len(call["X_val"])
+            assert len(call["X_val"]) / fold_rows == pytest.approx(0.15, abs=0.02)
+            # Disjoint from the rows fitted on - a referee inside the fit is
+            # not a referee.
+            assert not set(call["X"].index) & set(call["X_val"].index)
+            assert call["trainer"].best_iteration is not None
+            assert call["trainer"].best_iteration < 399
+
+    @needs_trainer("lightgbm")
+    def test_a_temporal_fold_carves_its_chronological_tail(
+        self, synthetic_frame, features, monkeypatch
+    ):
+        """The stopping referee must never see the future (D9)."""
+        calls = _spy_on_fold_fits(monkeypatch, "lightgbm")
+        columns = [*features["numeric_features"], *features["categorical_features"]]
+        frame = synthetic_frame.set_index("date").sort_index()
+        assert frame.index.is_monotonic_increasing  # the premise of the assertion
+
+        trainer = _build(LIGHTGBM_TRAINER, features, cv_mode="temporal")
+        trainer.cross_validate(frame[columns], frame[TEST_TARGET], cv=3)
+
+        assert len(calls) == 3
+        for call in calls:
+            assert call["X"].index.max() < call["X_val"].index.min()
+
+
+@pytest.mark.parametrize("spec", SKLEARN_API_SPECS)
+class TestBaseTuner:
     @needs_tune
     def test_tune_applies_its_winners_to_the_next_train(self, spec, features, xy):
         X_train, y_train, X_val, y_val = xy
@@ -353,13 +448,27 @@ class TestBoosterHistoryShape:
 
 
 class TestTorchOverrides:
-    """The two places TorchTrainer refuses the base's sklearn machinery."""
+    """Where TorchTrainer departs from the base's sklearn machinery."""
 
     @needs_trainer("torch")
-    def test_cross_validate_is_refused_with_a_pointer(self, features, xy):
+    def test_the_sklearn_cv_estimator_is_still_refused(self, features):
+        # Only the sklearn-scored tuner path asks for one, and a torch module
+        # is not a sklearn estimator. Cross-validation no longer comes
+        # through here: it runs the epoch loop per fold (R1.11).
         trainer = _build(TORCH_TRAINER, features)
-        with pytest.raises(NotImplementedError, match="hyperparameter_tune"):
-            trainer.cross_validate(xy[0], xy[1], cv=2)
+        with pytest.raises(NotImplementedError, match="sklearn"):
+            trainer._cv_estimator()
+
+    @needs_trainer("torch")
+    def test_a_fold_trainer_drops_the_real_run_s_harness_knobs(self, features):
+        """A fold is a sibling fit: no sanity check, no resume."""
+        spec = {
+            **TORCH_TRAINER,
+            "torch": {**TORCH_TRAINER["torch"], "sanity_check": True},
+        }
+        twin = _build(spec, features).fresh()
+        assert twin.options.sanity_check is False
+        assert twin.options.resume_from is None
 
     @needs_tune
     @needs_trainer("torch")

@@ -21,9 +21,11 @@ Decisions worth knowing before editing (D7):
 - **Labels are encoded to 0..K-1 internally** and mapped back on predict:
   ``CrossEntropyLoss`` needs contiguous class indices, the rest of the
   project speaks the original labels.
-- **``cross_validate`` and the base tuner are overridden.** A torch module
-  is not a sklearn estimator, and k-fold epoch training is expensive enough
-  that doing it silently would be a trap.
+- **The base tuner is overridden.** A torch module is not a sklearn
+  estimator, so there is nothing to hand a sklearn scorer; trials score on
+  a holdout instead. ``cross_validate`` needs no override - the base runs
+  this trainer's own ``train`` per fold (R1.11), which is expensive by
+  construction and says so in the log rather than hiding it.
 
 The architecture is the MLP in ``../modules/architectures.py``; another one
 is another trainer class overriding :meth:`_build_model`, not a lookup key
@@ -351,16 +353,29 @@ class TorchTrainer(BaseTrainer):
     def _cv_estimator(self, overrides: dict | None = None):
         """Not available: a torch module is not a sklearn estimator.
 
+        Only the sklearn-scored paths need one, which is why this trainer
+        also overrides :meth:`hyperparameter_tune`. Cross-validation does
+        not come through here: :meth:`BaseTrainer.cross_validate` runs this
+        trainer's own :meth:`train` once per fold.
+
         Raises:
-            NotImplementedError: Always. k-fold epoch training is expensive
-                enough that it must be an explicit choice, not something the
-                base quietly does.
+            NotImplementedError: Always.
         """
         raise NotImplementedError(
-            "TorchTrainer has no sklearn CV estimator. Use hyperparameter_tune "
-            "(which holds out a validation split per trial), or wrap the model "
-            "in a skorch NeuralNetClassifier if k-fold CV is genuinely needed."
+            "TorchTrainer has no sklearn CV estimator; cross_validate runs the "
+            "epoch loop itself, and hyperparameter_tune scores trials on a "
+            "holdout. Wrap the model in a skorch NeuralNet only if a sklearn "
+            "search object is genuinely needed."
         )
+
+    def fresh(self) -> "TorchTrainer":
+        """An unfitted twin, minus the knobs that belong to the real run.
+
+        A CV fold is a sibling fit, exactly as a tuning trial is: it must
+        not re-run the sanity check or resume from the run's checkpoint,
+        so both reuse :meth:`_candidate`.
+        """
+        return self._candidate({})
 
     def hyperparameter_tune(
         self,
