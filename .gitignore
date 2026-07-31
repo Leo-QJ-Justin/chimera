@@ -19,3 +19,10 @@ Thumbs.db
 
 # local reference material, never committed
 *.zip
+
+# Python bytecode and local ML run stores
+__pycache__/
+*.pyc
+.pytest_cache/
+mlruns/
+mlflow.db

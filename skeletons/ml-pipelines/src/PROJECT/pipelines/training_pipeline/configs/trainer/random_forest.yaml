@@ -1,0 +1,18 @@
+# @package trainer
+#
+# Every name in classes/sklearn_trainer.py ESTIMATORS has a group file
+# here, so `trainer=<name>` is always the way to switch.
+kind: sklearn
+name: random_forest
+
+params:
+  n_estimators: 300
+  max_depth: null
+  min_samples_leaf: 1
+
+tune:
+  enabled: false
+  n_trials: 20
+  cv: 3
+  metric: null
+  direction: maximize

@@ -258,6 +258,76 @@ without defaults), compose with ro mounts, Dockerfile per D13.
 - Re-verifying Sembcorp screenshot transcriptions against original
   notebooks (research doc carries the caveat).
 
+## Revision R1 (maintainer review of first build, 2026-07-31)
+
+Maintainer feedback on the first built trees supersedes parts of D2 and
+the scaffold trees above:
+
+**R1.1 Two scaffold types, no tiers.** The deliverables are an **AI
+Application scaffold** (future task) and one **ML Pipelines scaffold**.
+The assessment / production / production-dl tier split is dropped; there
+is one production-level ML scaffold.
+
+**R1.2 Four pipelines.** `data_pipeline`, `training_pipeline`,
+`inference_pipeline`, and a dedicated **`evaluation_pipeline`** (consumes
+inference outputs plus ground truth: metrics report, residual/error
+triage, run comparison). D4 unchanged: evaluation feeds through the
+inference path for predictions.
+
+**R1.3 Production level by default.** MLflow integration is first-class
+and enabled by default in the base config (sqlite backend); run
+artifacts, config snapshots, split records all standard. "Bare minimum"
+is explicitly not the goal of the scaffold.
+
+**R1.4 dynamic-simu-model layout per pipeline.** Each pipeline directory
+carries `classes/` (stateful objects behind an ABC), `modules/`
+(stateless functions), `configs/` (that pipeline's YAML), and
+`pipeline.py` (orchestrator). `core/` remains the shared utils package
+all pipelines import.
+
+**R1.5 Trainer abstraction.** `training_pipeline/classes/` defines
+`BaseTrainer` (fit / predict / save / load contract) with concrete
+trainers configured externally via the Hydra model group — e.g.
+`SklearnTrainer`, `LightGBMTrainer`, `TorchTrainer` (the DL loops,
+callbacks, checkpointing, and device modules become TorchTrainer's
+internals). The train pipeline orchestrator stays thin: load gold →
+split → build trainer from config → fit → evaluate hook → persist.
+
+**R1.6 (follow-up, 2026-07-31): per-pipeline configs + evonik trainer
+contract.** Each pipeline also carries its own `configs/` directory
+(dynamic-simu-model layout confirmed against the repo), with one shared
+`configs/shared/base.yaml` at root reached via Hydra searchpath. Every
+trainer has a config file tagged to it as a Hydra group
+(`training_pipeline/configs/trainer/<name>.yaml`) composed into the
+training config — selection is `trainer=<name>` on the CLI. The
+`BaseTrainer` contract follows the maintainer's evonik-temp
+`BaseModel` (the more complete variant): abstract `_build_model()` +
+`_get_param_space(trial)` + `train`/`predict`; concrete on the base:
+`evaluate(metrics=[str|callable])`, `cross_validate` (fresh model per
+run), and `hyperparameter_tune` (full Optuna loop). Merged with existing
+decisions rather than copied verbatim: metadata-first save/load with a
+recorded `model_class` check (not bare joblib), CV splitter chosen from
+the split config mode per D9 (not hardcoded `TimeSeriesSplit`), seed
+threaded from config, optuna as a guarded optional dependency.
+
+**R1.7 (follow-up, 2026-07-31): no medallion jargon.** The layered-output
+concept stays, the naming goes: no "bronze/silver/gold" in class names,
+file names, config keys, or docs. The data pipeline saves **stage
+checkpoints** — config lists which stage boundaries to persist
+(`checkpoints: [cleaned, features]` → `data/processed/<stage>.parquet`)
+— and its final output is the processed/model-input table
+(`processed_path`), which the training pipeline consumes. Where earlier
+sections of this spec say "gold table", read "processed table".
+
+**R1.8 (follow-up, 2026-07-31): the scaffold is self-contained.**
+`core/` lives *inside* the scaffold (`ml-pipelines/src/PROJECT/core/`)
+with its test suite in the scaffold's `tests/`, not as a separate
+`skeletons/core/` copied in at scaffold time. Rationale: after R1.1
+there is exactly one consumer; the copy-at-scaffold-time indirection
+made the in-repo template non-runnable and added a botchable step. If a
+future scaffold needs shared utils, factor then — don't pre-abstract
+for a consumer that doesn't exist.
+
 ## Build plan (next task, via /start-task)
 
 1. `skeletons/` in chimera: `core/` utils package first (D3, D8, D10, D11,

@@ -1,0 +1,53 @@
+# dictConfig used by core.logging_setup.configure_logging(config_path=...).
+#
+# Adapted from the AISG canon: console plus level-split rotating file
+# handlers, `delay: true` so no file is created until something is actually
+# logged (matters in read-only containers). Two deliberate changes:
+#   - stdlib Formatter instead of pythonjsonlogger, so there is no extra
+#     dependency; swap the `class:` line back in if you ship to a log
+#     aggregator;
+#   - no `mode: "w"` anywhere - truncating per run defeats rotation.
+#
+# Handler filenames are rebound into `logging.log_dir` at load time, so the
+# bare names here are intentional.
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  standard:
+    format: "%(asctime)s %(process)d %(name)s %(levelname)s %(message)s"
+    datefmt: "%Y-%m-%dT%H:%M:%S%z"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+
+  info_file:
+    class: logging.handlers.RotatingFileHandler
+    level: INFO
+    formatter: standard
+    filename: info.log
+    maxBytes: 10485760
+    backupCount: 20
+    delay: true
+    encoding: utf8
+
+  error_file:
+    class: logging.handlers.RotatingFileHandler
+    level: ERROR
+    formatter: standard
+    filename: errors.log
+    maxBytes: 10485760
+    backupCount: 20
+    delay: true
+    encoding: utf8
+
+# Root, not a package logger: the package name changes when the scaffold
+# renames src/PROJECT/, and a stale logger name here would silently drop
+# every message.
+root:
+  level: INFO
+  handlers: [console, info_file, error_file]

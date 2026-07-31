@@ -1,0 +1,35 @@
+# @package _global_
+#
+# Sections every pipeline shares. `@package _global_` merges these at the
+# config root instead of under a `shared:` key, so the pydantic schemas see
+# `seed`, `logging`, `mlflow` directly.
+#
+# Pipeline configs list this group FIRST and `_self_` LAST, so a pipeline
+# file can override any value here (e.g. its own log_prefix).
+
+seed: 42
+timezone: Asia/Singapore
+
+logging:
+  level: INFO
+  log_to_file: true
+  log_dir: logs
+  log_prefix: run
+  timezone: Asia/Singapore
+  # Set to null to use the programmatic console+file logger instead of the
+  # dictConfig file (see configs/logging.yaml).
+  config_path: configs/logging.yaml
+
+mlflow:
+  # ON by default: this scaffold is production-level, and a run nobody can
+  # find again is not a production run. The sqlite backend needs no server
+  # (`mlflow ui --backend-store-uri sqlite:///mlflow.db` to browse), and
+  # tracking failures only ever warn - they never abort a pipeline.
+  #
+  # Turn it off per invocation with `mlflow.enabled=false`; that is what the
+  # test suite does, so tests stay hermetic. The <run_dir>/metrics.jsonl
+  # sidecar is written either way.
+  enabled: true
+  tracking_uri: sqlite:///mlflow.db
+  experiment_name: PROJECT
+  run_name: null

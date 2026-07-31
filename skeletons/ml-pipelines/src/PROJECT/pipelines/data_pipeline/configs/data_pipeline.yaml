@@ -1,0 +1,64 @@
+# Data pipeline config. Lives beside the pipeline it configures; only the
+# cross-pipeline `shared/base` block is pulled in from the repo-root
+# configs/ directory via hydra.searchpath below.
+defaults:
+  - shared/base
+  - _self_
+
+# Hydra's per-job chdir is OFF: every relative path below is relative to the
+# directory you launched from (the project root), which is why no pipeline
+# needs hydra.utils.get_original_cwd(). Hydra's own job dir is parked under
+# logs/ so it never mixes with outputs/<pipeline>/<timestamp>/.
+#
+# `searchpath` resolves against that same launch directory, which is what
+# lets one copy of shared/base.yaml serve all four pipelines. Run the entry
+# scripts from the project root.
+hydra:
+  searchpath:
+    - file://configs
+  job:
+    chdir: false
+  run:
+    dir: logs/hydra/${now:%Y%m%d_%H%M%S}
+
+logging:
+  log_prefix: data_pipeline
+
+mlflow:
+  experiment_name: PROJECT-data
+
+raw_path: data/raw/dataset.csv
+
+# The final stage's output: the model-input table, and the only file the
+# training pipeline reads.
+processed_path: data/processed/model_input.parquet
+
+# Stage boundaries to pipe out for inspection: raw | cleaned | features.
+# Diagnostic only - nothing downstream reads them. Leave empty for a lean
+# run; add `cleaned` the first time someone asks "what did cleaning do?".
+checkpoints: [cleaned]
+checkpoint_dir: data/processed
+
+# Stable row keys. They are carried into the model-input table because the
+# training pipeline records split *membership* by these keys (D8) - never by
+# positional index.
+key_cols: [entity_id, date]
+date_col: date
+target: target
+
+cleaning:
+  # Values that mean "missing" but are not NaN. Replaced before anything else.
+  sentinel_values: [-999, -9999, "NA", "N/A", "?", ""]
+  drop_duplicates: true
+  # null -> dedupe on key_cols; give an explicit column list to override.
+  dedup_subset: null
+  # Rows missing any of these are unusable downstream, so they are dropped
+  # here (with a counted reason) rather than failing mid-training.
+  drop_rows_missing: [target]
+  strip_whitespace: true
+
+features:
+  # STATELESS features only - anything needing .fit() belongs in the training
+  # pipeline's trainer (D5).
+  date_parts: true
+  drop_columns: []

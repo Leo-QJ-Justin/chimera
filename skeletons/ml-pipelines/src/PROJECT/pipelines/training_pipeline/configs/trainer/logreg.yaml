@@ -1,0 +1,25 @@
+# @package trainer
+#
+# Config group: pick with `python run_training.py trainer=logreg`.
+#
+# `kind` selects the BaseTrainer implementation (see
+# classes/registry.py); `name` selects the estimator inside it; `params`
+# are passed straight through to that estimator's constructor, so a typo
+# raises there, loudly.
+kind: sklearn
+name: logreg
+
+params:
+  C: 1.0
+  max_iter: 1000
+  class_weight: null
+
+tune:
+  # Optuna over classes/sklearn_trainer.py's _logreg_space. Off by default:
+  # a tuned run costs n_trials * cv fits.
+  enabled: false
+  n_trials: 20
+  cv: 3
+  # sklearn *scoring* string; null -> the task default (f1_macro).
+  metric: null
+  direction: maximize

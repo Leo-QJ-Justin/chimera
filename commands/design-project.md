@@ -85,7 +85,15 @@ discipline. Reorderable; outcomes insert and remove rows.
 
 ## Phase 5 — SCAFFOLD
 
-Invoke `/new-project` (it will detect the existing docs and fill the
+**ML/data and hybrid projects:** scaffold from the pipeline skeletons at
+`${CLAUDE_PLUGIN_ROOT}/skeletons/` — read its README for the tier/stack
+chooser (assessment vs production; tabular/TS vs DL overlay) and the
+scaffolding steps (copy tree → rename `src/PROJECT/` → copy `core/` in →
+set pyproject name). Recommend a tier from the PRD's scope and confirm
+with your human partner before copying. The system-design repo layout
+should have been drawn from the chosen skeleton tree in Phase 3.
+
+Then invoke `/new-project` (it will detect the existing docs and fill the
 project CLAUDE.md from them). If the repo already existed, just commit the
 genesis docs: `git add docs/ && git commit -m "docs: project genesis - prd,
 architecture, system design, roadmap"`.

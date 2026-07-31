@@ -1,0 +1,31 @@
+defaults:
+  - shared/base
+  - _self_
+
+hydra:
+  searchpath:
+    - file://configs
+  job:
+    chdir: false
+  run:
+    dir: logs/hydra/${now:%Y%m%d_%H%M%S}
+
+logging:
+  log_prefix: inference
+
+mlflow:
+  experiment_name: PROJECT-inference
+
+model:
+  # best | latest. An explicit timestamp wins over both.
+  use: best
+  timestamp: null
+  runs_dir: outputs/training
+
+input_path: data/processed/model_input.parquet
+output_path: outputs/inference/predictions.parquet
+
+# Carried through to the predictions file so the evaluation pipeline can join
+# on them. They are NOT features; the model never sees them.
+key_cols: [entity_id, date]
+include_probabilities: true
