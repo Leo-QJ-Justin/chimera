@@ -1,12 +1,12 @@
 # Training pipeline config.
 #
 # `trainer` is a config group in ./trainer/: one file per model family,
-# carrying its estimator name, params and harness knobs together. Switch
-# families with `python run_training.py trainer=mlp` - the orchestrator
-# never learns which one it got.
+# carrying that family's own params and harness knobs. Switch families with
+# `python run_training.py trainer=mlp` - the orchestrator never learns which
+# one it got.
 defaults:
   - shared/base
-  - trainer: lightgbm
+  - trainer: random_forest
   - _self_
 
 hydra:

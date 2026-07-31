@@ -1,15 +1,19 @@
 # @package trainer
 #
+# Config group: pick with `python run_training.py trainer=mlp`.
 # Requires the `torch` optional dependency group (torch +
 # early-stopping-pytorch).
+#
+# The file is named for the architecture, `kind` for the family: one torch
+# trainer, whose module is the MLP in modules/architectures.py. Another
+# architecture is another trainer class overriding _build_model, plus its
+# own file here.
 #
 # The split between `params` and `torch` is deliberate: `params` is the
 # *architecture* (what the saved checkpoint's shapes depend on, and what
 # metadata.json must carry to rebuild the module), `torch` is the *harness*
-# (what the training loop does). Swapping an architecture therefore swaps
-# `params` and nothing else.
+# (what the training loop does).
 kind: torch
-name: mlp
 
 params:
   hidden_sizes: [128, 64]

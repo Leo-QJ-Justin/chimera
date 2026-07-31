@@ -8,13 +8,7 @@ agree, which a fabricated metadata.json would not prove.
 import pandas as pd
 import pytest
 
-from conftest import (
-    LIGHTGBM_TRAINER,
-    SKLEARN_TRAINER,
-    TEST_KEY_COLS,
-    TORCH_TRAINER,
-    make_training_config,
-)
+from conftest import TEST_KEY_COLS, make_training_config, trainer_params
 from PROJECT.core.run_artifacts import load_metadata
 from PROJECT.pipelines.inference_pipeline import InferencePipeline
 from PROJECT.pipelines.training_pipeline import TrainingPipeline
@@ -126,19 +120,10 @@ class TestRunSelection:
 class TestTrainerAgnosticLoading:
     """Every family reloads through the same registry path (R1.5)."""
 
-    @pytest.mark.parametrize(
-        "trainer",
-        [
-            pytest.param(SKLEARN_TRAINER, id="sklearn"),
-            pytest.param(LIGHTGBM_TRAINER, id="lightgbm"),
-            pytest.param(TORCH_TRAINER, id="torch"),
-        ],
-    )
+    @pytest.mark.parametrize("trainer", trainer_params())
     def test_any_trainers_run_serves(
         self, tmp_path, processed_file, trainer, inference_config_factory
     ):
-        if trainer["kind"] == "torch":
-            pytest.importorskip("torch", reason="needs the 'torch' extra")
         training_config = make_training_config(tmp_path, processed_file, trainer)
         TrainingPipeline(training_config).run()
 

@@ -1,13 +1,12 @@
 # @package trainer
 #
+# Config group: pick with `python run_training.py trainer=lightgbm`.
 # Requires the `lightgbm` optional dependency group.
 #
-# A separate trainer rather than another sklearn estimator, because
-# LightGBM earns its own fit path: `eval_set` early stopping needs the
-# *transformed* validation matrix, which a sklearn Pipeline's fit
-# signature cannot carry.
+# Its own fit path, because `eval_set` early stopping needs the
+# *transformed* validation matrix, which a sklearn Pipeline's fit signature
+# cannot carry.
 kind: lightgbm
-name: lightgbm
 
 params:
   n_estimators: 500

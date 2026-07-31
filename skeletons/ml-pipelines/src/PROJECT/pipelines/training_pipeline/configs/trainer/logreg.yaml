@@ -2,12 +2,10 @@
 #
 # Config group: pick with `python run_training.py trainer=logreg`.
 #
-# `kind` selects the BaseTrainer implementation (see
-# classes/registry.py); `name` selects the estimator inside it; `params`
-# are passed straight through to that estimator's constructor, so a typo
-# raises there, loudly.
-kind: sklearn
-name: logreg
+# `kind` IS the family: it names the trainer class (classes/logreg_trainer.py),
+# this file, and `model_type` in the saved metadata. `params` go straight to
+# LogisticRegression's constructor, so a typo raises there, loudly.
+kind: logreg
 
 params:
   C: 1.0
@@ -15,8 +13,9 @@ params:
   class_weight: null
 
 tune:
-  # Optuna over classes/sklearn_trainer.py's _logreg_space. Off by default:
-  # a tuned run costs n_trials * cv fits.
+  # Optuna over classes/logreg_trainer.py's own space (C, solver, and
+  # l1_ratio where the solver allows it). Off by default: a tuned run costs
+  # n_trials * cv fits.
   enabled: false
   n_trials: 20
   cv: 3

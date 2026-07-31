@@ -5,7 +5,7 @@ stateful (it holds a resolved run dir, its metadata and the loaded
 trainer), which is why it is a class.
 
 **Trainer-agnostic by construction.** ``metadata.json`` records
-``model_type`` as ``"<kind>:<name>"``; the registry maps the kind to a
+``model_type``, which is the trainer family key; the registry maps it to a
 trainer class and that class's own ``load`` does the rest. A LightGBM run
 and a torch run therefore load through identical code here - which is the
 whole point of the ``BaseTrainer`` contract, and the thing that would
@@ -22,7 +22,7 @@ from ....core.run_artifacts import (
     resolve_artifact_path,
     validate_feature_columns,
 )
-from ...training_pipeline.classes.registry import trainer_class_for_model_type
+from ...training_pipeline.classes import get_trainer_class
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class ModelLoader:
         self.run_dir = self.resolve_run_dir()
         self.metadata = load_metadata(self.run_dir)
         feature_columns = validate_feature_columns(self.metadata, expected_features)
-        trainer_cls = trainer_class_for_model_type(self.metadata["model_type"])
+        trainer_cls = get_trainer_class(self.metadata["model_type"])
         trainer = trainer_cls.load(self.run_dir)
         logger.info(
             "Serving run %s (%s via %s, %d features)",

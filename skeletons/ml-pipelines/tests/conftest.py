@@ -9,6 +9,8 @@ same switch production uses, not by monkeypatching - so the suite is
 hermetic even though the shipped base config turns tracking on.
 """
 
+from importlib.util import find_spec
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -34,20 +36,72 @@ TEST_TRAIN_SIZE: float = _split_defaults.train_size
 N_ROWS = 240
 
 # Tiny by design: these tests assert the contract (which artifacts exist,
-# that a reload predicts), not model quality.
-TORCH_TRAINER = {
-    "kind": "torch",
-    "name": "mlp",
-    "params": {"hidden_sizes": [16]},
-    "torch": {"epochs": 3, "batch_size": 32, "patience": 5},
+# that a reload predicts), not model quality. One entry per shipped family,
+# keyed by `kind` exactly as the config group files are.
+LOGREG_TRAINER = {"kind": "logreg", "params": {"max_iter": 200}}
+RANDOM_FOREST_TRAINER = {
+    "kind": "random_forest",
+    "params": {"n_estimators": 20, "max_depth": 4},
 }
 LIGHTGBM_TRAINER = {
     "kind": "lightgbm",
-    "name": "lightgbm",
     "params": {"n_estimators": 40, "verbose": -1},
     "lightgbm": {"early_stopping_rounds": 10},
 }
-SKLEARN_TRAINER = {"kind": "sklearn", "name": "logreg", "params": {"max_iter": 200}}
+XGBOOST_TRAINER = {
+    "kind": "xgboost",
+    "params": {"n_estimators": 40, "max_depth": 3},
+    "xgboost": {"early_stopping_rounds": 5},
+}
+TORCH_TRAINER = {
+    "kind": "torch",
+    "params": {"hidden_sizes": [16]},
+    "torch": {"epochs": 3, "batch_size": 32, "patience": 5},
+}
+
+# Every shipped family, in registry order. Tests parametrize over this so a
+# new family is one entry here plus its class - never a new test file.
+ALL_TRAINERS = {
+    "logreg": LOGREG_TRAINER,
+    "random_forest": RANDOM_FOREST_TRAINER,
+    "lightgbm": LIGHTGBM_TRAINER,
+    "xgboost": XGBOOST_TRAINER,
+    "torch": TORCH_TRAINER,
+}
+
+# Optional extras a family needs, for skipif marks. Empty -> always runnable.
+TRAINER_EXTRAS = {
+    "logreg": (),
+    "random_forest": (),
+    "lightgbm": ("lightgbm",),
+    "xgboost": ("xgboost",),
+    "torch": ("torch", "early_stopping_pytorch"),
+}
+
+
+def needs(*modules: str, reason: str = ""):
+    """Skip when an optional extra is absent, exactly as the scaffold does."""
+    missing = [m for m in modules if find_spec(m) is None]
+    return pytest.mark.skipif(
+        bool(missing), reason=f"needs {reason or 'the extra'} ({', '.join(missing)})"
+    )
+
+
+def needs_trainer(kind: str):
+    """Skip when the family's optional extra is absent."""
+    return needs(*TRAINER_EXTRAS[kind], reason=f"the {kind!r} extra")
+
+
+def trainer_params():
+    """One ``pytest.param`` per shipped family, each skipping cleanly.
+
+    Parametrizing over this is what keeps the contract suite honest: a new
+    family is one entry in ``ALL_TRAINERS`` and no new test.
+    """
+    return [
+        pytest.param(spec, id=kind, marks=needs_trainer(kind))
+        for kind, spec in ALL_TRAINERS.items()
+    ]
 
 
 @pytest.fixture
@@ -114,8 +168,8 @@ def make_training_config(tmp_path, processed_file, trainer: dict, **overrides):
 
 @pytest.fixture
 def training_config(tmp_path, processed_file) -> TrainingConfig:
-    """The default (sklearn) training config for the pipeline tests."""
-    return make_training_config(tmp_path, processed_file, SKLEARN_TRAINER)
+    """The default (logreg) training config for the pipeline tests."""
+    return make_training_config(tmp_path, processed_file, LOGREG_TRAINER)
 
 
 @pytest.fixture

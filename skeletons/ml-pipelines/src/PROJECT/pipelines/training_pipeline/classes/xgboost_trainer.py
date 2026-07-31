@@ -1,24 +1,16 @@
-"""``LightGBMTrainer``: the native fit path, with ``eval_set`` early stopping.
+"""``XGBoostTrainer``: the other boosting family, with its own fit path.
 
-Why its early stopping needs a fit path of its own: it wants the
-**transformed** validation matrix at fit time, and a sklearn ``Pipeline``
-cannot carry one - ``pipeline.fit(X, y, model__eval_set=...)`` hands the
-booster *untransformed* validation data, which either raises or, worse,
-silently stops on a garbage curve.
-
-So the two halves are fitted in order (preprocessor on train, booster on
-the transformed matrices) and only then assembled into the shared
-``Pipeline`` artifact, which makes a LightGBM run indistinguishable from
-any other at serving time.
-
-Cross-validation and tuning still go through the base's sklearn path,
-where there is no validation split to stop on: those runs train the full
-``n_estimators`` by design, and the early-stopped fit is what the final
-``train`` produces.
+Same reason LightGBM has one: early stopping needs the **transformed**
+validation matrix at fit time, which a sklearn ``Pipeline.fit`` signature
+cannot carry. The difference from LightGBM is in the wiring -
+``early_stopping_rounds`` is a *constructor* argument in xgboost >= 1.6,
+not a fit argument or a callback, and setting it without an ``eval_set``
+raises. So it is attached in :meth:`train`, only once there is something
+to stop on, which also leaves ``_build_model`` usable for the base's CV
+and tuning paths.
 """
 
 import logging
-from inspect import signature
 
 import pandas as pd
 
@@ -28,19 +20,19 @@ from .sklearn_common import PipelineArtifactTrainer
 logger = logging.getLogger(__name__)
 
 
-def _import_lightgbm():
+def _import_xgboost():
     """Guarded import: the failure must name the install, not the traceback."""
     try:
-        import lightgbm
+        import xgboost
     except ImportError as e:
         raise ImportError(
-            "trainer.kind='lightgbm' requires the optional dependency: "
-            "`uv add lightgbm` (or install the 'lightgbm' extra)"
+            "trainer.kind='xgboost' requires the optional dependency: "
+            "`uv add xgboost` (or install the 'xgboost' extra)"
         ) from e
-    return lightgbm
+    return xgboost
 
 
-class LightGBMTrainer(PipelineArtifactTrainer):
+class XGBoostTrainer(PipelineArtifactTrainer):
     """Gradient-boosted trees with validation-driven early stopping.
 
     Args:
@@ -50,7 +42,7 @@ class LightGBMTrainer(PipelineArtifactTrainer):
         log_period: Rounds between eval-log lines; 0 silences them.
     """
 
-    kind = "lightgbm"
+    kind = "xgboost"
     scale_numeric = False
 
     def __init__(
@@ -73,22 +65,21 @@ class LightGBMTrainer(PipelineArtifactTrainer):
         }
 
     def _build_model(self):
-        lightgbm = _import_lightgbm()
+        xgboost = _import_xgboost()
         booster = (
-            lightgbm.LGBMRegressor
-            if self.task == "regression"
-            else lightgbm.LGBMClassifier
+            xgboost.XGBRegressor if self.task == "regression" else xgboost.XGBClassifier
         )
         return booster(random_state=self.seed, **self.params)
 
     def _get_param_space(self, trial) -> dict:
         return {
-            "num_leaves": trial.suggest_int("num_leaves", 15, 150),
+            # xgboost's `eta`, under the sklearn API's name for it.
             "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "n_estimators": trial.suggest_int("n_estimators", 50, 500, step=50),
-            "min_child_samples": trial.suggest_int("min_child_samples", 5, 100),
+            "max_depth": trial.suggest_int("max_depth", 2, 10),
+            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
+            "min_child_weight": trial.suggest_int("min_child_weight", 1, 20),
+            "n_estimators": trial.suggest_int("n_estimators", 50, 500, step=50),
         }
 
     def train(
@@ -98,38 +89,27 @@ class LightGBMTrainer(PipelineArtifactTrainer):
         X_val: pd.DataFrame | None = None,
         y_val=None,
         **kwargs,
-    ) -> "LightGBMTrainer":
-        lightgbm = _import_lightgbm()
+    ) -> "XGBoostTrainer":
         preprocessor = self.new_preprocessor()
         X_train_t = preprocessor.fit_transform(self.align(X))
         booster = self._build_model()
 
         fit_kwargs = dict(kwargs)
         if X_val is not None and y_val is not None:
-            X_val_t = preprocessor.transform(self.align(X_val))
-            # LightGBM 4.7 renamed `eval_set` to `eval_X`/`eval_y` and warns on
-            # the old name; earlier 4.x has only the old one. Probing the
-            # signature keeps the supported range wide and the log clean.
-            if "eval_X" in signature(booster.fit).parameters:
-                fit_kwargs.update({"eval_X": X_val_t, "eval_y": y_val})
-            else:
-                fit_kwargs["eval_set"] = [(X_val_t, y_val)]
-            callbacks = []
             if self.early_stopping_rounds:
-                callbacks.append(
-                    lightgbm.early_stopping(self.early_stopping_rounds, verbose=False)
-                )
-            if self.log_period:
-                callbacks.append(lightgbm.log_evaluation(period=self.log_period))
-            fit_kwargs["callbacks"] = callbacks
+                booster.set_params(early_stopping_rounds=self.early_stopping_rounds)
+            fit_kwargs["eval_set"] = [(preprocessor.transform(self.align(X_val)), y_val)]
+            fit_kwargs.setdefault("verbose", self.log_period or False)
         else:
             logger.warning(
-                "No validation split given; LightGBM will train the full "
+                "No validation split given; XGBoost will train the full "
                 "n_estimators with no early stopping"
             )
 
         booster.fit(X_train_t, y, **fit_kwargs)
-        self.best_iteration = getattr(booster, "best_iteration_", None)
+        # None until a stopping round actually fires, so it doubles as the
+        # record of whether early stopping engaged.
+        self.best_iteration = getattr(booster, "best_iteration", None)
         self.assemble(preprocessor, booster)
         logger.info(
             "Trained %s on %d rows (best_iteration=%s of %s)",
@@ -154,18 +134,17 @@ class LightGBMTrainer(PipelineArtifactTrainer):
         return params
 
     def log_model(self, tracker, input_example=None) -> None:
-        """The bare booster, in the ``mlflow.lightgbm`` flavor.
+        """The bare booster, in the ``mlflow.xgboost`` flavor.
 
-        The flavor stores a LightGBM model, not a sklearn pipeline, so the
-        logged model takes the *transformed* design matrix - which is what
-        the example is transformed into here, so the recorded signature
-        describes what the artifact actually accepts.
+        The flavor stores an XGBoost model, not a sklearn pipeline, so the
+        example is transformed first and the recorded signature describes
+        what the artifact actually accepts.
         """
         self.check_fitted()
         example = None if input_example is None else self.transformed(input_example)
         log_flavor_model(
             tracker,
-            "lightgbm",
+            "xgboost",
             self.estimator,
             input_example=example,
             predictions=None if example is None else self.estimator.predict(example),

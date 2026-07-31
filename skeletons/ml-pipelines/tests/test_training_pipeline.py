@@ -12,11 +12,14 @@ import pytest
 
 from conftest import (
     LIGHTGBM_TRAINER,
-    SKLEARN_TRAINER,
+    LOGREG_TRAINER,
     TEST_KEY_COLS,
     TEST_TARGET,
     TORCH_TRAINER,
+    XGBOOST_TRAINER,
     make_training_config,
+    needs_trainer,
+    trainer_params,
 )
 from PROJECT.core.run_artifacts import (
     get_best_info,
@@ -42,7 +45,7 @@ class TestRunArtifacts:
         run_dir, config = trained_run
         snapshot = yaml.safe_load((run_dir / "config.yaml").read_text())
         assert snapshot["processed_path"] == config.processed_path
-        assert snapshot["trainer"]["name"] == config.trainer.name
+        assert snapshot["trainer"]["kind"] == config.trainer.kind
         assert snapshot["seed"] == config.seed
 
     def test_metadata_pins_the_feature_contract(self, trained_run):
@@ -56,7 +59,7 @@ class TestRunArtifacts:
     def test_metadata_carries_the_trainer_spec_for_reload(self, trained_run):
         run_dir, config = trained_run
         spec = load_metadata(run_dir)["hyperparameters"]
-        assert spec["model_class"] == "SklearnTrainer"
+        assert spec["model_class"] == "LogisticRegressionTrainer"
         assert spec["trainer"] == config.trainer.kind
         assert spec["cv_mode"] == config.split.mode
 
@@ -132,29 +135,23 @@ class TestTemporalSplit:
 class TestTrainerSwap:
     """The orchestrator must not care which family it got."""
 
-    @pytest.mark.parametrize(
-        "trainer",
-        [
-            pytest.param(SKLEARN_TRAINER, id="sklearn"),
-            pytest.param(LIGHTGBM_TRAINER, id="lightgbm"),
-            pytest.param(TORCH_TRAINER, id="torch"),
-        ],
-    )
+    @pytest.mark.parametrize("trainer", trainer_params())
     def test_every_trainer_produces_the_same_artifact_shape(
         self, tmp_path, processed_file, trainer
     ):
-        if trainer["kind"] == "torch":
-            pytest.importorskip("torch", reason="needs the 'torch' extra")
         config = make_training_config(tmp_path, processed_file, trainer)
         run_dir = TrainingPipeline(config).run()
 
         metadata = load_metadata(run_dir)
-        assert metadata["model_type"].startswith(trainer["kind"])
+        assert metadata["model_type"] == trainer["kind"]
         assert (run_dir / "splits.json").exists()
+        # Whatever this family saved is named in metadata, never guessed.
+        for filename in metadata["files"].values():
+            assert (run_dir / filename).exists()
         assert get_best_info(config.output_dir)["metric"] == "val_f1_macro"
 
+    @needs_trainer("torch")
     def test_torch_history_reaches_the_metrics_sidecar(self, tmp_path, processed_file):
-        pytest.importorskip("torch", reason="needs the 'torch' extra")
         config = make_training_config(tmp_path, processed_file, TORCH_TRAINER)
         run_dir = TrainingPipeline(config).run()
 
@@ -168,12 +165,19 @@ class TestTrainerSwap:
 
 
 class TestTuning:
-    def test_tuned_run_records_its_winners(self, tmp_path, processed_file):
+    @pytest.mark.parametrize(
+        "base",
+        [
+            pytest.param(LOGREG_TRAINER, id="logreg"),
+            pytest.param(
+                LIGHTGBM_TRAINER, id="lightgbm", marks=needs_trainer("lightgbm")
+            ),
+            pytest.param(XGBOOST_TRAINER, id="xgboost", marks=needs_trainer("xgboost")),
+        ],
+    )
+    def test_tuned_run_records_its_winners(self, tmp_path, processed_file, base):
         pytest.importorskip("optuna", reason="needs the 'tune' extra")
-        trainer = {
-            **LIGHTGBM_TRAINER,
-            "tune": {"enabled": True, "n_trials": 2, "cv": 2},
-        }
+        trainer = {**base, "tune": {"enabled": True, "n_trials": 2, "cv": 2}}
         config = make_training_config(tmp_path, processed_file, trainer)
         run_dir = TrainingPipeline(config).run()
 

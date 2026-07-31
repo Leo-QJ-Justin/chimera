@@ -1,0 +1,37 @@
+# @package trainer
+#
+# Config group: pick with `python run_training.py trainer=xgboost`.
+# Requires the `xgboost` optional dependency group.
+#
+# Its own fit path for the same reason LightGBM has one - early stopping
+# needs the *transformed* validation matrix. The wiring differs:
+# early_stopping_rounds is a constructor argument in xgboost >= 1.6, and it
+# raises when set with no eval_set, so the trainer attaches it only when
+# there is a validation split to stop on.
+kind: xgboost
+
+params:
+  n_estimators: 500
+  # xgboost's `eta`, under the sklearn API's name for it.
+  learning_rate: 0.05
+  max_depth: 6
+  subsample: 0.9
+  colsample_bytree: 0.9
+  min_child_weight: 1
+
+xgboost:
+  # Early stopping on the validation split. null disables it and trains the
+  # full n_estimators.
+  early_stopping_rounds: 50
+  # Rounds between eval-log lines; 0 silences the per-round log.
+  log_period: 0
+
+tune:
+  # Requires the `tune` extra (optuna). As with LightGBM, the tuning CV has
+  # no validation split to early-stop on, so trials train the full
+  # n_estimators.
+  enabled: false
+  n_trials: 20
+  cv: 3
+  metric: null
+  direction: maximize

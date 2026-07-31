@@ -1,59 +1,45 @@
 """The ``BaseTrainer`` contract, asserted identically for every family.
 
-This is the acid test of R1.5: one parametrized suite, three trainers, no
+This is the acid test of R1.5: one parametrized suite, five trainers, no
 per-family branches. If a new trainer cannot pass this file unchanged, it
 does not satisfy the contract and the pipelines cannot use it.
 
-The torch case skips cleanly when the extra is absent, which is also how
-the shipped skeleton behaves on a machine that only installed the sklearn
-dependencies.
+Optional-extra families skip cleanly, which is also how the shipped
+skeleton behaves on a machine that installed only the sklearn dependencies.
 """
 
-from importlib.util import find_spec
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import PROJECT
 from conftest import (
+    ALL_TRAINERS,
     LIGHTGBM_TRAINER,
-    SKLEARN_TRAINER,
+    LOGREG_TRAINER,
+    RANDOM_FOREST_TRAINER,
     TEST_SEED,
     TEST_TRAIN_SIZE,
     TORCH_TRAINER,
+    XGBOOST_TRAINER,
+    needs,
+    needs_trainer,
+    trainer_params,
 )
 from PROJECT.core.run_artifacts import save_metadata
-from PROJECT.pipelines.training_pipeline import build_trainer
-from PROJECT.pipelines.training_pipeline.classes.registry import (
-    get_trainer_class,
-    trainer_class_for_model_type,
-)
+from PROJECT.pipelines.training_pipeline import build_trainer, get_trainer_class
+from PROJECT.pipelines.training_pipeline.classes import TRAINERS
 from PROJECT.schemas import TrainerConfig
 
+needs_tune = needs("optuna", reason="the 'tune' extra")
 
-def _needs(extra: str, *modules: str):
-    """Skip when an optional extra is absent, exactly as the scaffold does."""
-    missing = [m for m in modules if find_spec(m) is None]
-    return pytest.mark.skipif(
-        bool(missing), reason=f"needs the {extra!r} extra ({', '.join(missing)})"
-    )
+TRAINER_SPECS = trainer_params()
 
-
-needs_tune = _needs("tune", "optuna")
-
-TRAINER_SPECS = [
-    pytest.param(SKLEARN_TRAINER, id="sklearn"),
-    pytest.param(LIGHTGBM_TRAINER, id="lightgbm", marks=_needs("lightgbm", "lightgbm")),
-    pytest.param(
-        TORCH_TRAINER,
-        id="torch",
-        marks=_needs("torch", "torch", "early_stopping_pytorch"),
-    ),
-]
-
-# sklearn + lightgbm only: the base's CV/tuning path needs a sklearn-shaped
+# Everything except torch: the base's CV/tuning path needs a sklearn-shaped
 # estimator, which TorchTrainer deliberately refuses to fake.
-SKLEARN_API_SPECS = TRAINER_SPECS[:2]
+SKLEARN_API_SPECS = [p for p in TRAINER_SPECS if p.id != "torch"]
 
 
 def _build(spec: dict, features: dict, **overrides):
@@ -69,7 +55,7 @@ def _build(spec: dict, features: dict, **overrides):
 
 @pytest.mark.parametrize("spec", TRAINER_SPECS)
 class TestContract:
-    def test_train_then_predict_one_row_at_a_time(self, spec, features, xy):
+    def test_train_then_predict(self, spec, features, xy):
         X_train, y_train, X_val, y_val = xy
         trainer = _build(spec, features).train(X_train, y_train, X_val, y_val)
 
@@ -138,20 +124,18 @@ class TestContract:
         run_dir.mkdir()
         _write_metadata(run_dir, trainer, trainer.save(run_dir))
 
-        wrong = next(
-            get_trainer_class(kind)
-            for kind in ("sklearn", "lightgbm", "torch")
-            if kind != spec["kind"]
-        )
+        # A family with no optional extra, so the class guard is what fails.
+        other = "random_forest" if spec["kind"] == "logreg" else "logreg"
         with pytest.raises(ValueError, match="does not match"):
-            wrong.load(run_dir)
+            get_trainer_class(other).load(run_dir)
 
     def test_registry_resolves_the_saved_model_type(self, spec, features):
         trainer = _build(spec, features)
-        assert trainer_class_for_model_type(trainer.model_type) is type(trainer)
+        # model_type IS the family key: one string names class, config and run.
+        assert trainer.model_type == spec["kind"]
+        assert get_trainer_class(trainer.model_type) is type(trainer)
 
 
-@needs_tune
 @pytest.mark.parametrize("spec", SKLEARN_API_SPECS)
 class TestCrossValidationAndTuning:
     def test_cross_validate_reports_mean_and_std(self, spec, features, xy):
@@ -170,11 +154,12 @@ class TestCrossValidationAndTuning:
         trainer.cross_validate(X_train, y_train, cv=3)
         assert not trainer.fitted
 
+    @needs_tune
     def test_tune_applies_its_winners_to_the_next_train(self, spec, features, xy):
         X_train, y_train, X_val, y_val = xy
         trainer = _build(spec, features)
 
-        best = trainer.hyperparameter_tune(X_train, y_train, n_trials=3, cv=3)
+        best = trainer.hyperparameter_tune(X_train, y_train, n_trials=2, cv=3)
         assert best and trainer.best_params == best
         # Folded into params, so the next train actually uses them - the bug
         # this asserts against is a search whose result nobody applies.
@@ -184,32 +169,109 @@ class TestCrossValidationAndTuning:
         assert trainer.get_params()["tuned"] is True
 
 
+class TestPerFamilySpaces:
+    """Each family tunes over its own space, not a shared one."""
+
+    @needs_tune
+    def test_logreg_space_carries_its_derived_penalty(self, features, xy):
+        """A value derived from a suggestion must survive into params.
+
+        ``study.best_params`` holds only what Optuna suggested; ``penalty``
+        is derived from the sampled solver, so it reaches ``params`` solely
+        because the tuner records the *resolved* dict per trial.
+        """
+        trainer = _build(LOGREG_TRAINER, features)
+        best = trainer.hyperparameter_tune(xy[0], xy[1], n_trials=4, cv=2)
+        assert {"C", "solver", "class_weight"} <= set(best)
+        if best["solver"] == "saga":
+            assert best["penalty"] == "elasticnet"
+            assert 0.0 <= best["l1_ratio"] <= 1.0
+
+    @needs_tune
+    @needs_trainer("xgboost")
+    def test_xgboost_space_is_its_own(self, features, xy):
+        trainer = _build(XGBOOST_TRAINER, features)
+        best = trainer.hyperparameter_tune(xy[0], xy[1], n_trials=2, cv=2)
+        assert set(best) == {
+            "learning_rate",
+            "max_depth",
+            "subsample",
+            "colsample_bytree",
+            "min_child_weight",
+            "n_estimators",
+        }
+
+    def test_random_forest_space_differs_from_logregs(self, features):
+        """Two sklearn families, two spaces - no shared estimator table."""
+        forest = _build(RANDOM_FOREST_TRAINER, features)
+        linear = _build(LOGREG_TRAINER, features)
+        trial = _StubTrial()
+        assert "max_features" in forest._get_param_space(trial)
+        assert "max_features" not in linear._get_param_space(trial)
+
+
+class TestBoosterEarlyStopping:
+    """Both boosters must actually stop on the validation split."""
+
+    @needs_trainer("xgboost")
+    def test_xgboost_early_stopping_engages(self, features, xy):
+        X_train, y_train, X_val, y_val = xy
+        # Far more rounds than this tiny frame can keep improving on, so
+        # stopping has to fire before the last one.
+        trainer = _build(
+            {**XGBOOST_TRAINER, "params": {"n_estimators": 400, "max_depth": 3}}, features
+        )
+        trainer.train(X_train, y_train, X_val, y_val)
+
+        assert trainer.best_iteration is not None
+        assert trainer.best_iteration < 399
+        assert trainer.training_summary()["early_stopping_rounds"] == 5
+
+    @needs_trainer("xgboost")
+    def test_xgboost_without_a_validation_split_trains_full(self, features, xy):
+        # early_stopping_rounds with no eval_set raises in xgboost, so the
+        # trainer must not attach it. This is that guard.
+        trainer = _build(XGBOOST_TRAINER, features)
+        trainer.train(xy[0], xy[1])
+        assert trainer.best_iteration is None
+
+    @needs_trainer("lightgbm")
+    def test_lightgbm_early_stopping_engages(self, features, xy):
+        X_train, y_train, X_val, y_val = xy
+        trainer = _build(
+            {**LIGHTGBM_TRAINER, "params": {"n_estimators": 400, "verbose": -1}}, features
+        )
+        trainer.train(X_train, y_train, X_val, y_val)
+        assert trainer.best_iteration is not None
+        assert trainer.best_iteration < 400
+
+
 class TestTorchOverrides:
     """The two places TorchTrainer refuses the base's sklearn machinery."""
 
-    @_needs("torch", "torch")
+    @needs_trainer("torch")
     def test_cross_validate_is_refused_with_a_pointer(self, features, xy):
         trainer = _build(TORCH_TRAINER, features)
         with pytest.raises(NotImplementedError, match="hyperparameter_tune"):
             trainer.cross_validate(xy[0], xy[1], cv=2)
 
     @needs_tune
-    @_needs("torch", "torch")
+    @needs_trainer("torch")
     def test_tune_uses_a_holdout_and_applies_the_result(self, features, xy):
         trainer = _build(TORCH_TRAINER, features)
         best = trainer.hyperparameter_tune(xy[0], xy[1], n_trials=2)
-        assert "options__lr" in best
         assert trainer.options.lr == best["options__lr"]
         assert trainer.params["dropout"] == best["params__dropout"]
+        # hidden_sizes is derived from a width and a depth, so it exists only
+        # because the resolved suggestion is recorded per trial.
+        assert trainer.params["hidden_sizes"] == best["params__hidden_sizes"]
 
 
 class TestTorchRegressionAndCheckpoints:
     """Review-gate regressions: the scalar head and honest checkpoints."""
 
-    @_needs("torch", "torch", "early_stopping_pytorch")
+    @needs_trainer("torch")
     def test_regression_head_trains_and_predicts(self, synthetic_frame):
-        import numpy as np
-
         trainer = build_trainer(
             TrainerConfig(**TORCH_TRAINER),
             task="regression",
@@ -227,12 +289,12 @@ class TestTorchRegressionAndCheckpoints:
         assert preds.shape == (len(X) - cut,)
         assert np.isfinite(preds).all()
 
-    @_needs("torch", "torch", "early_stopping_pytorch")
+    @needs_trainer("torch")
     def test_checkpoint_last_records_final_state_not_best(self, tmp_path, features, xy):
-        """`resume: continue` must resume the last epoch, not the best one.
+        """``resume: continue`` must resume the last epoch, not the best one.
 
         The served model is rewound to the best weights after training, so
-        `save` must write checkpoint_last from the pre-rewind snapshot. The
+        ``save`` must write checkpoint_last from the pre-rewind snapshot. The
         snapshot is perturbed here to make the two distinguishable even when
         the best epoch happened to be the final one.
         """
@@ -251,6 +313,19 @@ class TestTorchRegressionAndCheckpoints:
         assert any(not torch.equal(best[k], v) for k, v in bumped.items())
 
 
+class _StubTrial:
+    """A minimal Optuna trial stand-in: takes the low end of every range."""
+
+    def suggest_int(self, name, low, *args, **kwargs):
+        return low
+
+    def suggest_float(self, name, low, *args, **kwargs):
+        return low
+
+    def suggest_categorical(self, name, choices):
+        return choices[0]
+
+
 def _write_metadata(run_dir, trainer, files: dict) -> None:
     """The metadata a training run would have written, minus the run detail."""
     save_metadata(
@@ -267,14 +342,30 @@ def _write_metadata(run_dir, trainer, files: dict) -> None:
 
 def test_unknown_trainer_kind_lists_what_exists():
     with pytest.raises(KeyError, match="registered"):
-        get_trainer_class("xgboost")
+        get_trainer_class("catboost")
 
 
-def test_sklearn_estimator_rejects_an_unsupported_task(features):
-    spec = {**SKLEARN_TRAINER}
+def test_every_registered_kind_has_a_config_group_file():
+    """``trainer=<kind>`` must always be the way to switch families."""
+    group = Path(PROJECT.__file__).parent / "pipelines/training_pipeline/configs/trainer"
+    declared = {
+        line.split(":", 1)[1].strip()
+        for path in group.glob("*.yaml")
+        for line in path.read_text().splitlines()
+        if line.startswith("kind:")
+    }
+    assert declared == set(TRAINERS)
+
+
+def test_the_contract_suite_covers_every_registered_family():
+    """A new family must not be able to skip this file quietly."""
+    assert set(ALL_TRAINERS) == set(TRAINERS)
+
+
+def test_logreg_rejects_a_regression_task(features):
     trainer = build_trainer(
-        TrainerConfig(**spec), task="regression", seed=TEST_SEED, **features
+        TrainerConfig(**LOGREG_TRAINER), task="regression", seed=TEST_SEED, **features
     )
     frame = pd.DataFrame({c: [0.0] for c in trainer.feature_columns})
-    with pytest.raises(ValueError, match="supports"):
+    with pytest.raises(ValueError, match="classifier"):
         trainer.train(frame, [0.0])

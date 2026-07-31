@@ -1,32 +1,33 @@
 """``TorchTrainer``: the deep-learning harness behind the trainer contract.
 
-Everything that used to be a standalone DL training pipeline lives here
-as one trainer: the epoch loop, early stopping, the plateau scheduler,
-the NaN guard, checkpointing, device setup and the sanity check are all
+Everything that used to be a standalone DL training pipeline lives here as
+one trainer: the epoch loop, early stopping, the plateau scheduler, the
+NaN guard, checkpointing, device setup and the sanity check are all
 internals (``../modules/``), and the outside world sees only
 ``train / predict / evaluate / save / load``.
 
 Decisions worth knowing before editing (D7):
 
-- **Same preprocessing as every other trainer.** The fitted
-  ``ColumnTransformer`` is part of the artifact, so a torch run accepts
-  the same raw feature frame a LightGBM run does - categoricals included.
-  That is what makes the registry swap in ``run_inference.py`` possible.
+- **Same preprocessing as every other trainer**, and it is part of the
+  artifact - so a torch run accepts the same raw feature frame a LightGBM
+  run does, categoricals included.
 - **One monitored metric.** ``trainer.torch.monitor: {name, mode}`` drives
   early stopping *and* the LR schedule, so no metric ever needs a
   ``Const - error`` inversion to look higher-is-better.
-- **Best weights are restored after the loop.** ``evaluate`` and the
-  metrics recorded in metadata therefore describe the model that will be
-  served, not whatever the last epoch happened to produce.
-  ``checkpoint_last.pt`` still carries the raw final state for resuming.
-- **Checkpoints are dicts, never pickled modules** - see
-  ``../modules/checkpointing.py``.
-- **Labels are encoded to 0..K-1 internally** and mapped back on predict,
-  because ``CrossEntropyLoss`` requires contiguous class indices while
-  the rest of the project speaks the original labels.
+- **Best weights are restored after the loop**, so ``evaluate``, the
+  metrics in metadata and the logged MLflow model all describe the model
+  that will be served. ``checkpoint_last.pt`` keeps the raw final state for
+  resuming, and checkpoints are dicts, never pickled modules.
+- **Labels are encoded to 0..K-1 internally** and mapped back on predict:
+  ``CrossEntropyLoss`` needs contiguous class indices, the rest of the
+  project speaks the original labels.
 - **``cross_validate`` and the base tuner are overridden.** A torch module
-  is not a sklearn estimator, and k-fold epoch training is expensive
-  enough that silently doing it would be a trap. See the two methods.
+  is not a sklearn estimator, and k-fold epoch training is expensive enough
+  that doing it silently would be a trap.
+
+The architecture is the MLP in ``../modules/architectures.py``; another one
+is another trainer class overriding :meth:`_build_model`, not a lookup key
+inside this one.
 """
 
 import logging
@@ -57,24 +58,13 @@ from ..modules.checkpointing import (
 from ..modules.datasets import TabularTensorDataset, make_loaders
 from ..modules.device import describe_device, setup_device, wrap_model
 from ..modules.loops import accuracy, evaluate, predict, run_one_epoch
-from ..modules.preprocessing import build_preprocessor
+from ..modules.model_logging import log_flavor_model
 from ..modules.sanity import overfit_single_batch
 from .base_trainer import BaseTrainer, _import_optuna
 
 logger = logging.getLogger(__name__)
 
 PREPROCESSOR_FILENAME = "preprocessor.joblib"
-
-# name -> builder(input_dim, n_outputs, params). Add an architecture here and
-# in configs/trainer/<name>.yaml; nothing else in the trainer changes.
-ARCHITECTURES = {
-    "mlp": lambda input_dim, n_outputs, params: MLP(
-        input_dim=input_dim,
-        hidden_sizes=list(params.get("hidden_sizes", [128, 64])),
-        n_classes=n_outputs,
-        dropout=params.get("dropout", 0.0),
-    ),
-}
 
 # Tuning defaults per task: (project metric alias, optimisation direction).
 _TUNE_DEFAULT = {
@@ -87,14 +77,13 @@ class TorchTrainer(BaseTrainer):
     """Plain-torch training loop wrapped in the ``BaseTrainer`` contract.
 
     Args:
-        name: Architecture key in :data:`ARCHITECTURES`.
-        params: Architecture hyperparameters (widths, dropout, ...).
+        params: Architecture hyperparameters (``hidden_sizes``, ``dropout``).
         options: Harness knobs; validated as
             :class:`~PROJECT.schemas.TorchTrainerConfig`, so the defaults
             live in exactly one place.
-        input_dim: Design-matrix width. Recorded at training time;
-            supplied by :meth:`load` so the module can be rebuilt before
-            its weights land.
+        input_dim: Design-matrix width. Recorded at training time; supplied
+            by :meth:`load` so the module can be rebuilt before its weights
+            land.
         n_outputs: Head width (class count, or 1 for regression). Same
             provenance as ``input_dim``.
         classes: Original class labels in encoding order. Same provenance.
@@ -104,7 +93,6 @@ class TorchTrainer(BaseTrainer):
 
     def __init__(
         self,
-        name: str,
         params: dict | None = None,
         *,
         options: dict | None = None,
@@ -113,7 +101,7 @@ class TorchTrainer(BaseTrainer):
         classes: list | None = None,
         **kwargs,
     ):
-        super().__init__(name, params, **kwargs)
+        super().__init__(params, **kwargs)
         self.options = TorchTrainerConfig(**(options or {}))
         self.input_dim = input_dim
         self.n_outputs = n_outputs
@@ -139,27 +127,26 @@ class TorchTrainer(BaseTrainer):
     def _build_model(self):
         """A fresh ``nn.Module`` for the recorded shapes.
 
-        Zero-argument and side-effect free, so it doubles as the factory
-        the overfit-single-batch check needs (that check must not pollute
-        the run's model with 100 steps of single-batch gradient).
+        Zero-argument and side-effect free, so it doubles as the factory the
+        overfit-single-batch check needs (that check must not pollute the
+        run's model with 100 steps of single-batch gradient).
         """
-        if self.name not in ARCHITECTURES:
-            raise KeyError(
-                f"Unknown torch architecture {self.name!r}; registered: "
-                f"{sorted(ARCHITECTURES)}. Add a builder to ARCHITECTURES and a "
-                "configs/trainer/<name>.yaml."
-            )
         if not self.input_dim:
             raise RuntimeError("input_dim is unknown; train() or load() sets it")
-        return ARCHITECTURES[self.name](self.input_dim, self.n_outputs, self.params)
+        return MLP(
+            input_dim=self.input_dim,
+            hidden_sizes=list(self.params.get("hidden_sizes", [128, 64])),
+            n_classes=self.n_outputs,
+            dropout=self.params.get("dropout", 0.0),
+        )
 
     def _get_param_space(self, trial) -> dict:
         """Search space, split by destination.
 
-        ``params__*`` keys are architecture (they change checkpoint
-        shapes), ``options__*`` keys are harness. The prefixes are what
-        let :meth:`hyperparameter_tune` route a suggestion without a
-        hardcoded list of which knob is which.
+        ``params__*`` keys are architecture (they change checkpoint shapes),
+        ``options__*`` keys are harness. The prefixes are what let
+        :meth:`hyperparameter_tune` route a suggestion without a hardcoded
+        list of which knob is which.
         """
         width = trial.suggest_categorical("params__hidden_width", [32, 64, 128, 256])
         depth = trial.suggest_int("params__depth", 1, 3)
@@ -186,15 +173,13 @@ class TorchTrainer(BaseTrainer):
 
         options = self.options
         if options.deterministic_cudnn:
-            # Determinism costs speed and can raise on ops without
-            # deterministic kernels - which is why it is opt-in config,
-            # not a default.
+            # Costs speed and raises on ops without deterministic kernels,
+            # which is why it is opt-in config rather than a default.
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
             logger.info("Deterministic cuDNN kernels pinned (opt-in)")
-        self.preprocessor = build_preprocessor(
-            self.numeric_features, self.categorical_features
-        )
+
+        self.preprocessor = self.new_preprocessor()
         X_train_t = self._to_array(self.preprocessor.fit_transform(self.align(X)))
         y_train_e = self._encode_targets(y, fit=True)
         self.input_dim = X_train_t.shape[1]
@@ -248,8 +233,7 @@ class TorchTrainer(BaseTrainer):
                 loss_fn=loss_fn,
             )
 
-        start_epoch = self._maybe_resume()
-        self._run_epochs(loaders, loss_fn, metric_fn, start_epoch)
+        self._run_epochs(loaders, loss_fn, metric_fn, self._maybe_resume())
         self.fitted = True
         return self
 
@@ -339,14 +323,11 @@ class TorchTrainer(BaseTrainer):
         return metrics
 
     def _restore_best(self, best_path: Path) -> None:
-        """Serve the best weights, not the last ones.
+        """Serve the best-monitored weights, not whichever epoch was last.
 
-        Without this, ``evaluate`` and the metrics written into metadata
-        would describe an epoch nobody chose - the one that happened to be
-        last when patience ran out. The raw final state is snapshotted
-        first so ``checkpoint_last.pt`` stays honest and
-        ``resume: continue`` really continues from the last epoch rather
-        than silently from the best one.
+        The raw final state is snapshotted first so ``checkpoint_last.pt``
+        stays honest and ``resume: continue`` really continues from the last
+        epoch rather than silently from the best one.
         """
         if not Path(best_path).exists():
             logger.warning("No best checkpoint written; keeping final weights")
@@ -366,10 +347,9 @@ class TorchTrainer(BaseTrainer):
         """Not available: a torch module is not a sklearn estimator.
 
         Raises:
-            NotImplementedError: Always. ``sk_cross_validate`` would need
-                a ``fit``/``predict`` adapter *and* k-fold epoch training,
-                which is expensive enough that it must be an explicit
-                choice rather than something the base quietly does.
+            NotImplementedError: Always. k-fold epoch training is expensive
+                enough that it must be an explicit choice, not something the
+                base quietly does.
         """
         raise NotImplementedError(
             "TorchTrainer has no sklearn CV estimator. Use hyperparameter_tune "
@@ -390,20 +370,14 @@ class TorchTrainer(BaseTrainer):
         """Optuna over a held-out validation split, not k-fold CV.
 
         Overrides the base because k-fold would multiply an already
-        expensive fit by ``cv``. ``cv`` is therefore **ignored** and a
-        single stratified holdout is carved from ``X``.
+        expensive fit by ``cv``, which is therefore **ignored**. ``metric``
+        is a *project metric alias* (``"f1_macro"``, ``"rmse"``) scored
+        through :meth:`evaluate`, not a sklearn scoring string - there is no
+        sklearn scorer to hand a torch module to.
 
-        The other deviation: ``metric`` here is a *project metric alias*
-        (``"f1_macro"``, ``"rmse"``) scored through :meth:`evaluate`, not
-        a sklearn scoring string - there is no sklearn scorer to hand a
-        torch module to. When ``metric`` is None both it and ``direction``
-        come from the task.
-
-        Known bias: trials are scored on the same holdout they
-        early-stopped against, so the selected score is optimistic. The
-        honest number remains the training pipeline's untouched test
-        split; use k-fold (at k times the cost) if trial selection
-        itself must be unbiased.
+        Known bias: trials are scored on the same holdout they early-stopped
+        against, so the selected score is optimistic. The honest number
+        remains the training pipeline's untouched test split.
 
         Returns:
             The best parameters found, already folded into ``params`` /
@@ -418,16 +392,22 @@ class TorchTrainer(BaseTrainer):
         )
 
         def objective(trial) -> float:
-            suggestion = self._get_param_space(trial)
-            candidate = self._candidate(suggestion)
+            resolved = self._get_param_space(trial)
+            # The space derives values Optuna never sees as suggestions
+            # (hidden_sizes from a width and a depth), so the resolved dict
+            # is recorded here and read back from the winning trial.
+            trial.set_user_attr("resolved_params", resolved)
+            candidate = self._candidate(resolved)
             candidate.train(X_tune, y_tune, X_holdout, y_holdout)
             return candidate.evaluate(X_holdout, y_holdout, metrics=[metric])[metric]
 
         study = optuna.create_study(direction=direction, **optuna_kwargs)
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-        self.best_params = dict(study.best_params)
-        self._apply(self._get_best_suggestion(study))
+        self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
+        params, options = self._route(self.best_params)
+        self.params.update(params)
+        self.options = TorchTrainerConfig(**{**self.options.model_dump(), **options})
         logger.info(
             "Tuned %s over %d trials: best %s=%.6f with %s",
             self.model_type,
@@ -442,7 +422,6 @@ class TorchTrainer(BaseTrainer):
         """A sibling trainer carrying one trial's suggestion."""
         params, options = self._route(suggestion)
         return type(self)(
-            self.name,
             params={**self.params, **params},
             # Sanity checks and resumes belong to the real run, not a trial.
             options={
@@ -458,36 +437,18 @@ class TorchTrainer(BaseTrainer):
             cv_mode=self.cv_mode,
         )
 
-    def _apply(self, suggestion: dict) -> None:
-        """Fold a winning suggestion into this trainer's own config."""
-        params, options = self._route(suggestion)
-        self.params.update(params)
-        self.options = TorchTrainerConfig(**{**self.options.model_dump(), **options})
-
     @staticmethod
     def _route(suggestion: dict) -> tuple[dict, dict]:
         """Split a ``params__``/``options__`` suggestion by destination."""
-        params = {
-            k[len("params__") :]: v
-            for k, v in suggestion.items()
-            if k.startswith("params__")
-        }
-        options = {
-            k[len("options__") :]: v
-            for k, v in suggestion.items()
-            if k.startswith("options__")
-        }
-        return params, options
 
-    def _get_best_suggestion(self, study) -> dict:
-        """Re-derive the winning trial's routed values.
+        def taking(prefix: str) -> dict:
+            return {
+                key[len(prefix) :]: value
+                for key, value in suggestion.items()
+                if key.startswith(prefix)
+            }
 
-        ``study.best_params`` holds the *suggested* names
-        (``params__hidden_width``), not the derived ones
-        (``params__hidden_sizes``), so the space is replayed against a
-        fixed trial to recover what the model was actually built with.
-        """
-        return self._get_param_space(_FixedTrial(study.best_params))
+        return taking("params__"), taking("options__")
 
     # -------------------------------------------------------------- predict
 
@@ -512,7 +473,7 @@ class TorchTrainer(BaseTrainer):
     def _raw_outputs(self, X: pd.DataFrame) -> np.ndarray:
         """Batched forward pass over an aligned, transformed frame."""
         self.check_fitted()
-        matrix = self._to_array(self.preprocessor.transform(self.align(X)))
+        matrix = self._design_matrix(X)
         dataset = TabularTensorDataset(
             matrix,
             np.zeros(len(matrix)),
@@ -528,6 +489,10 @@ class TorchTrainer(BaseTrainer):
         )
         return predict(self.model, loaders["predict"], self.device)
 
+    def _design_matrix(self, X: pd.DataFrame) -> np.ndarray:
+        """The float32 matrix the module actually consumes."""
+        return self._to_array(self.preprocessor.transform(self.align(X)))
+
     # ----------------------------------------------------------- persistence
 
     def training_summary(self) -> dict:
@@ -541,6 +506,25 @@ class TorchTrainer(BaseTrainer):
             params["n_parameters"] = self.summary["n_parameters"]
             params["device"] = self.summary["device"]
         return params
+
+    def log_model(self, tracker, input_example=None) -> None:
+        """The served module, in the ``mlflow.pytorch`` flavor.
+
+        ``self.model`` already carries the best-monitored weights, so this
+        logs the model that will be served. Any device wrapper is unwrapped
+        first - a saved ``DataParallel`` will not load on a CPU host - and
+        the example is the transformed design matrix, since the flavor
+        stores a module rather than a pipeline.
+        """
+        self.check_fitted()
+        example = None if input_example is None else self._design_matrix(input_example)
+        log_flavor_model(
+            tracker,
+            "pytorch",
+            getattr(self.model, "module", self.model),
+            input_example=example,
+            predictions=None if example is None else self._raw_outputs(input_example),
+        )
 
     def save(self, run_dir: str | Path) -> dict[str, str]:
         import torch
@@ -651,23 +635,3 @@ class TorchTrainer(BaseTrainer):
         """Transformer output (pandas or ndarray) as a float32 matrix."""
         values = frame.to_numpy() if hasattr(frame, "to_numpy") else np.asarray(frame)
         return values.astype(np.float32)
-
-
-class _FixedTrial:
-    """Replays recorded suggestions so a search space can be re-derived.
-
-    Optuna ships ``FixedTrial``, but importing it would make optuna a hard
-    dependency of a module that must import without it.
-    """
-
-    def __init__(self, params: dict):
-        self._params = params
-
-    def suggest_int(self, name, *args, **kwargs):
-        return self._params[name]
-
-    def suggest_float(self, name, *args, **kwargs):
-        return self._params[name]
-
-    def suggest_categorical(self, name, *args, **kwargs):
-        return self._params[name]

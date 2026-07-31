@@ -20,7 +20,7 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .core.config import (
     LoggingConfig,
@@ -72,17 +72,16 @@ class MonitorConfig(BaseModel):
 class TorchTrainerConfig(BaseModel):
     """Harness knobs for ``TorchTrainer`` - the loop, not the architecture.
 
-    Architecture lives in ``TrainerConfig.params`` (it decides the shapes a
-    checkpoint carries); everything here decides what the loop does with
-    them. Splitting the two is what lets ``trainer=<other_arch>`` change one
-    section and leave the harness alone.
+    Architecture lives in ``TrainerConfig.params`` because it decides the
+    shapes a checkpoint carries; everything here decides what the loop does
+    with them.
     """
 
     model_config = {"extra": "ignore"}
 
     lr: float = 1e-3
     weight_decay: float = 0.0
-    epochs: int = 30
+    epochs: int = Field(default=30, ge=1)
     batch_size: int = 32
     patience: int = 5
     monitor: MonitorConfig = MonitorConfig()
@@ -92,7 +91,8 @@ class TorchTrainerConfig(BaseModel):
     # Resume is a named product choice, not an implied behaviour.
     resume: Literal["continue", "from_best"] = "continue"
     resume_from: str | None = None
-    subsample_frac: float = 1.0
+    # Fraction of the training split drawn per epoch; 0 would train on nothing.
+    subsample_frac: float = Field(default=1.0, gt=0.0, le=1.0)
     sanity_check: bool = False
     num_workers: int = 0
     pin_memory: bool = False
@@ -106,25 +106,18 @@ class TorchTrainerConfig(BaseModel):
     def coerce_device_list(cls, value):
         """Accept ``visible_devices=0`` from the CLI, not just ``"0"``.
 
-        Hydra types a bare ``0`` as an int and ``0,1`` as a string, and
-        rejecting the int form for a value that is about to become an
-        environment variable helps nobody.
+        Hydra types a bare ``0`` as an int and ``0,1`` as a string; both end
+        up in the same environment variable.
         """
         return None if value is None else str(value)
 
-    @model_validator(mode="after")
-    def validate_ranges(self):
-        if not 0.0 < self.subsample_frac <= 1.0:
-            raise ValueError(
-                f"subsample_frac must be in (0, 1], got {self.subsample_frac}"
-            )
-        if self.epochs < 1:
-            raise ValueError(f"epochs must be >= 1, got {self.epochs}")
-        return self
 
+class BoosterConfig(BaseModel):
+    """Early-stopping knobs for the boosters (LightGBM, XGBoost).
 
-class LightGBMTrainerConfig(BaseModel):
-    """Harness knobs for ``LightGBMTrainer`` (the ``eval_set`` fit path)."""
+    One class for both: the two families differ in how early stopping is
+    wired into the fit, not in what the analyst has to decide about it.
+    """
 
     model_config = {"extra": "ignore"}
 
@@ -156,23 +149,23 @@ class TuneConfig(BaseModel):
 class TrainerConfig(BaseModel):
     """One entry of the ``trainer/`` config group.
 
-    ``kind`` picks the :class:`BaseTrainer` implementation, ``name`` picks
-    the estimator/architecture inside it, ``params`` are that estimator's
-    own kwargs. The per-kind sections carry harness knobs only one trainer
-    reads; an unused section costs nothing and keeps ``trainer=<x>`` a
-    single-file swap.
+    ``kind`` **is** the family: it names the trainer class, the config
+    group file, and ``model_type`` in the saved metadata. ``params`` are
+    that family's own estimator kwargs. The per-family sections below carry
+    harness knobs only one trainer reads; an unused section costs nothing
+    and keeps ``trainer=<kind>`` a single-file swap.
     """
 
     model_config = {"extra": "ignore", "protected_namespaces": ()}
 
-    kind: Literal["sklearn", "lightgbm", "torch"] = "sklearn"
-    name: str = "logreg"
+    kind: Literal["logreg", "random_forest", "lightgbm", "xgboost", "torch"] = "logreg"
     # Free-form: each family has its own knobs, and the trainer passes them
     # straight through so a typo raises in the constructor, loudly.
     params: dict = {}
     tune: TuneConfig = TuneConfig()
     torch: TorchTrainerConfig = TorchTrainerConfig()
-    lightgbm: LightGBMTrainerConfig = LightGBMTrainerConfig()
+    lightgbm: BoosterConfig = BoosterConfig()
+    xgboost: BoosterConfig = BoosterConfig()
 
 
 # ---------------------------------------------------------------- data pipeline
@@ -332,12 +325,7 @@ class TrainingConfig(RunConfig):
     @model_validator(mode="after")
     def validate_task_agreement(self):
         """The selection metric and the split mode must suit the task."""
-        allowed = metric_names(self.task)
-        if self.selection.metric not in allowed:
-            raise ValueError(
-                f"selection.metric={self.selection.metric!r} is not produced "
-                f"for task={self.task!r}; choose from {list(allowed)}"
-            )
+        check_metric(self.selection.metric, self.task, "selection.metric")
         if self.task == "regression" and self.split.mode == "stratified":
             # sklearn's own error for this ("least populated class has 1
             # member") names every distinct target value and explains nothing.
@@ -365,10 +353,9 @@ class ModelSelectionConfig(BaseModel):
     def reject_unquoted_timestamp(cls, value):
         """Catch ``model.timestamp=20260730_143000`` typed without quotes.
 
-        Hydra's grammar reads that as a Python numeric literal - underscores
-        are digit separators - so it arrives as the int 20260730143000 with
-        the separator already gone. Coercing it back to a string would
-        silently look for the wrong run, so this fails with the fix instead.
+        Hydra reads the underscore as a digit separator, so the value
+        arrives as an int with the separator already gone. Coercing it back
+        to a string would silently look for the wrong run.
         """
         if isinstance(value, int):
             raise ValueError(
@@ -414,7 +401,7 @@ class TriageConfig(BaseModel):
 
     model_config = {"extra": "ignore"}
 
-    top_n: int = 20
+    top_n: int = Field(default=20, ge=0)
     drill_down_columns: list[str] = []
 
 
@@ -422,9 +409,8 @@ class EvaluationConfig(RunConfig):
     """predictions + ground truth -> metrics report + error triage.
 
     Deliberately has no model, no feature list and no preprocessing: this
-    pipeline consumes what the inference pipeline produced (D4). If it ever
-    needs to *build* a sample, that is the bug the one-data-path rule
-    exists to prevent.
+    pipeline consumes what inference produced (D4). If it ever needs to
+    *build* a sample, that is the bug the one-data-path rule prevents.
     """
 
     model_config = {"extra": "ignore"}
@@ -451,14 +437,7 @@ class EvaluationConfig(RunConfig):
                 "truth by key, never by row position (the two files are "
                 "written by different runs and need not share an order)"
             )
-        allowed = metric_names(self.task)
-        if self.selection_metric not in allowed:
-            raise ValueError(
-                f"selection_metric={self.selection_metric!r} is not produced "
-                f"for task={self.task!r}; choose from {list(allowed)}"
-            )
-        if self.triage.top_n < 0:
-            raise ValueError(f"triage.top_n must be >= 0, got {self.triage.top_n}")
+        check_metric(self.selection_metric, self.task, "selection_metric")
         return self
 
 
@@ -470,14 +449,30 @@ def metric_names(task: str) -> tuple[str, ...]:
     return CLASSIFICATION_METRICS if task == "classification" else REGRESSION_METRICS
 
 
+def check_metric(metric: str, task: str, field: str) -> None:
+    """Reject a selection metric the run will never emit.
+
+    Two configs select a run by metric (training's ``best.json``,
+    evaluation's comparison); both would otherwise fail *after* the work,
+    at pointer-update time.
+
+    Raises:
+        ValueError: If ``metric`` is not produced for ``task``.
+    """
+    allowed = metric_names(task)
+    if metric not in allowed:
+        raise ValueError(
+            f"{field}={metric!r} is not produced for task={task!r}; "
+            f"choose from {list(allowed)}"
+        )
+
+
 def bootstrap(cfg, schema_cls: type[BaseModel]):
     """Validate a composed Hydra config and configure logging, once.
 
-    The one thing every entry script does before touching a pipeline:
-    coerce the OmegaConf object to a plain dict, surface sections the
-    schema ignores, validate, start logging, then report which values came
-    from defaults (in that order - the defaults report is useless before
-    handlers exist).
+    Coerce to a plain dict, surface sections the schema ignores, validate,
+    start logging, then report which values came from defaults - in that
+    order, because the defaults report is useless before handlers exist.
 
     Args:
         cfg: The ``DictConfig`` handed over by ``@hydra.main``.

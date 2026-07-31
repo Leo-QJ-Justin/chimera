@@ -29,6 +29,13 @@ mlflow:
   # Turn it off per invocation with `mlflow.enabled=false`; that is what the
   # test suite does, so tests stay hermetic. The <run_dir>/metrics.jsonl
   # sidecar is written either way.
+  #
+  # There is deliberately no autolog switch. Each trainer logs its own model
+  # in its own MLflow flavor after the fit (BaseTrainer.log_model), because
+  # autolog dumps per-version parameter sets nobody curated, fires on every
+  # cross-validation and tuning fit rather than on the run's model, and
+  # cannot attach this run's split fingerprints - which is the one thing
+  # that makes a logged model traceable back to the data it saw.
   enabled: true
   tracking_uri: sqlite:///mlflow.db
   experiment_name: PROJECT

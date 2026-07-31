@@ -2,61 +2,30 @@
 
 The training pipeline builds a trainer from the ``trainer/`` config group
 and then only ever calls the methods below. That is what keeps the
-orchestrator free of ``if trainer.name == ...`` branches, and what lets
-the inference pipeline reload a torch run and a LightGBM run with
-identical code.
+orchestrator free of ``if trainer.kind == ...`` branches, and what lets the
+inference pipeline reload a torch run and a LightGBM run with identical
+code.
 
-**Two abstract hooks, three concrete services.** Subclasses implement
-``_build_model`` (a fresh, seeded, unfitted estimator) and
-``_get_param_space`` (the Optuna search space) plus ``train``/``predict``.
-In exchange the base gives them ``evaluate``, ``cross_validate`` and
-``hyperparameter_tune`` for free - which is the point: those three are
-exactly where per-family reimplementations drift apart.
+Subclasses implement ``_build_model``, ``_get_param_space``,
+``train``/``predict`` and ``save``/``load``. In exchange the base gives
+them ``evaluate``, ``cross_validate`` and ``hyperparameter_tune`` - the
+three places per-family reimplementations drift apart.
 
-The contract, and the reason for each part:
+Four decisions the rest of the file assumes:
 
-``train(X, y, X_val, y_val)``
-    Validation data is in the *signature*, not optional out-of-band
-    state, because two of the three shipped trainers need it during the
-    fit (LightGBM's ``eval_set`` early stopping, torch's per-epoch
-    monitor). A trainer that has no use for it ignores it.
-
-``predict`` / ``predict_proba``
-    ``predict_proba`` is optional (base returns None): not every
-    estimator has one, and the inference pipeline degrades to hard
-    predictions rather than requiring every family to fake probabilities.
-
-``evaluate(X, y, metrics=...)``
-    Concrete, so no family can quietly score itself with its own metric
-    definition. Names resolve through the project's alias table first
-    (``f1_macro`` means one thing forever), then ``sklearn.metrics``;
-    callables are accepted for anything neither covers.
-
-``cross_validate(X, y, cv, metrics)``
-    A **fresh** model per fold, always - reusing a fitted estimator
-    across folds is leakage with extra steps. The splitter comes from the
-    run's ``split.mode`` (D9), never a hardcoded ``TimeSeriesSplit``.
-
-``hyperparameter_tune(...)``
-    The Optuna loop, with a fresh model per trial. Optuna is an optional
-    dependency; the import is guarded so a project that never tunes never
-    installs it.
-
-``save(run_dir) -> files map`` / ``load(run_dir)``
-    **One-artifact rule.** ``save`` returns the ``{kind: filename}`` map
-    that goes verbatim into ``metadata.json``, so nothing downstream ever
-    globs a directory or guesses a filename. ``load`` is
-    **metadata-first**: it reads ``metadata.json``, checks the recorded
-    ``model_class`` against itself, rebuilds the trainer from the spec
-    recorded there, then loads weights. Config files are not consulted -
-    they may have moved on since the run.
-
-``get_params()`` / ``spec()``
-    ``get_params`` is the flat, loggable view (tracker params).
-    ``spec`` is the **config round-trip**: everything needed to rebuild an
-    equivalent, unfitted trainer. Keeping them separate is deliberate -
-    the tracker wants ``model_lr=0.001``, the reload path wants a nested
-    structure it can hand back to ``__init__``.
+- **Validation data is in ``train``'s signature**, not out-of-band state,
+  because three shipped trainers need it during the fit (LightGBM and
+  XGBoost early stopping, torch's per-epoch monitor). A trainer with no
+  use for it ignores it.
+- **``predict_proba`` may return None.** The inference pipeline degrades to
+  hard predictions rather than making every family fake probabilities.
+- **One artifact, named in metadata.** ``save`` returns the
+  ``{kind: filename}`` map that goes verbatim into ``metadata.json``, so
+  nothing downstream globs a directory. ``load`` is metadata-first and
+  never consults config files, which may have moved on since the run.
+- **``get_params`` and ``spec`` stay separate.** The tracker wants
+  ``model_lr=0.001``; the reload path wants a nested structure it can hand
+  back to ``__init__``.
 """
 
 import logging
@@ -101,7 +70,6 @@ class BaseTrainer(ABC):
     """Train / predict / evaluate / cross-validate / tune / save / load.
 
     Args:
-        name: Estimator or architecture name within this trainer.
         params: The family's own hyperparameters, passed through to its
             constructor untouched so a typo raises there, loudly.
         task: ``"classification"`` or ``"regression"``.
@@ -114,18 +82,20 @@ class BaseTrainer(ABC):
         cv_mode: The run's ``split.mode``; picks the CV splitter (D9).
 
     Attributes:
-        kind: Registry key, and the prefix of ``model_type`` in metadata
-            (``"sklearn:logreg"``, ``"torch:mlp"``).
+        kind: Registry key, config ``trainer.kind``, and ``model_type`` in
+            metadata - one name for one family.
+        scale_numeric: Whether this family's preprocessing standardises
+            numerics. Trees set it False; splits are scale-invariant.
         best_params: Set by :meth:`hyperparameter_tune`; folded into
             ``params`` so the next ``train`` uses them.
         history: Per-iteration records for trainers that have iterations.
     """
 
     kind: ClassVar[str] = ""
+    scale_numeric: ClassVar[bool] = True
 
     def __init__(
         self,
-        name: str,
         params: dict | None = None,
         *,
         task: str = "classification",
@@ -134,7 +104,6 @@ class BaseTrainer(ABC):
         categorical_features: list[str] | None = None,
         cv_mode: str = "stratified",
     ):
-        self.name = name
         self.params = dict(params or {})
         self.task = task
         self.seed = seed
@@ -143,14 +112,13 @@ class BaseTrainer(ABC):
         self.cv_mode = cv_mode
         self.best_params: dict | None = None
         self.fitted = False
-        # The fitted artifact. Deliberately NOT built in __init__ (unlike
-        # the reference implementation): a torch module needs the design
-        # matrix width, which only exists once data has been transformed.
+        # The fitted artifact. Deliberately NOT built in __init__: a torch
+        # module needs the design-matrix width, which only exists once data
+        # has been transformed.
         self.model: Any = None
-        # Per-iteration records for trainers that have iterations (epochs,
-        # boosting rounds). The orchestrator replays them into the tracker
-        # after training, which is why train() needs no tracker argument and
-        # the trainers stay free of tracking code.
+        # The orchestrator replays these into the tracker after training,
+        # which is why train() needs no tracker argument and the trainers
+        # stay free of tracking code.
         self.history: list[dict] = []
 
     # ------------------------------------------------------- abstract hooks
@@ -166,14 +134,7 @@ class BaseTrainer(ABC):
 
     @abstractmethod
     def _get_param_space(self, trial) -> dict:
-        """The Optuna search space for this family.
-
-        Args:
-            trial: An ``optuna.Trial``.
-
-        Returns:
-            Parameter name -> suggested value.
-        """
+        """This family's Optuna space: parameter name -> suggested value."""
 
     @abstractmethod
     def train(
@@ -196,8 +157,8 @@ class BaseTrainer(ABC):
 
         Returns:
             ``{kind: filename}`` for ``metadata.json``'s ``files`` map.
-            Filenames only, never paths - the run dir is what resolves
-            them, and it moves.
+            Filenames only, never paths - the run dir resolves them, and it
+            moves.
         """
 
     @classmethod
@@ -220,6 +181,16 @@ class BaseTrainer(ABC):
         """Per-run detail for ``metadata.json``'s ``training_info``."""
         return {}
 
+    def log_model(self, tracker, input_example=None) -> None:
+        """Log the fitted model to ``tracker`` in this family's MLflow flavor.
+
+        Called by the training pipeline after ``train``, when tracking is
+        live. Implementations delegate to
+        ``..modules.model_logging.log_flavor_model``; the default is a
+        no-op, so a family without a flavor is not a failure.
+        """
+        logger.debug("%s logs no MLflow model", type(self).__name__)
+
     # -------------------------------------------------- concrete services
 
     def evaluate(
@@ -231,9 +202,6 @@ class BaseTrainer(ABC):
             X: Features, in any column order (realigned internally).
             y: Ground truth.
             metrics: Metric names or callables; None -> the task defaults.
-
-        Returns:
-            Metric name -> value.
         """
         self.check_fitted()
         return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
@@ -254,18 +222,15 @@ class BaseTrainer(ABC):
             ``{scoring_name: {"mean": ..., "std": ...}}``.
         """
         metrics = metrics or CV_SCORING[self.task]
-        splitter = (
-            make_cv_splitter(self.cv_mode, cv, self.seed) if isinstance(cv, int) else cv
-        )
         results = sk_cross_validate(
             self._cv_estimator(),
             self.align(X),
             y,
-            cv=splitter,
+            cv=self._splitter(cv),
             scoring=metrics,
             return_train_score=False,
         )
-        logger.info("Cross-validated %s over %s", self.model_type, splitter)
+        logger.info("Cross-validated %s over %s folds", self.model_type, cv)
         return {
             metric: {
                 "mean": float(np.mean(results[f"test_{metric}"])),
@@ -286,8 +251,8 @@ class BaseTrainer(ABC):
     ) -> dict:
         """Bayesian search over :meth:`_get_param_space`, scored by CV.
 
-        A fresh model per trial, and the winning params are folded into
-        ``self.params`` so the next :meth:`train` builds with them - the
+        A fresh model per trial, and the winners are folded into
+        ``self.params`` so the next :meth:`train` builds with them - a
         search result must not be a thing the caller can forget to apply.
 
         Args:
@@ -306,15 +271,18 @@ class BaseTrainer(ABC):
         """
         optuna = _import_optuna()
         metric = metric or TUNE_METRIC[self.task]
-        splitter = (
-            make_cv_splitter(self.cv_mode, cv, self.seed) if isinstance(cv, int) else cv
-        )
+        splitter = self._splitter(cv)
         X_aligned = self.align(X)
 
         def objective(trial) -> float:
-            candidate = self._cv_estimator(self._get_param_space(trial))
+            resolved = self._get_param_space(trial)
+            # study.best_params holds only what was *suggested*; a space that
+            # derives a value from a suggestion (a solver's penalty, a width
+            # to a layer list) would lose it. Record the resolved dict here
+            # and read it back from the winning trial.
+            trial.set_user_attr("resolved_params", resolved)
             scores = sk_cross_validate(
-                candidate,
+                self._cv_estimator(resolved),
                 X_aligned,
                 y,
                 cv=splitter,
@@ -328,7 +296,7 @@ class BaseTrainer(ABC):
         # with the run's log file, which is the thing anyone reads afterwards.
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
-        self.best_params = dict(study.best_params)
+        self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
         self.params.update(self.best_params)
         logger.info(
             "Tuned %s over %d trials: best %s=%.6f with %s",
@@ -340,6 +308,12 @@ class BaseTrainer(ABC):
         )
         return self.best_params
 
+    def _splitter(self, cv: int | Any):
+        """A fold count follows ``cv_mode`` (D9); a splitter passes through."""
+        return (
+            make_cv_splitter(self.cv_mode, cv, self.seed) if isinstance(cv, int) else cv
+        )
+
     def _cv_estimator(self, overrides: dict | None = None):
         """A fresh, unfitted, sklearn-compatible pipeline for CV/tuning.
 
@@ -350,17 +324,17 @@ class BaseTrainer(ABC):
         model = self._build_model()
         if overrides:
             model.set_params(**overrides)
-        return Pipeline(
-            [
-                (
-                    "preprocess",
-                    build_preprocessor(self.numeric_features, self.categorical_features),
-                ),
-                ("model", model),
-            ]
-        )
+        return Pipeline([("preprocess", self.new_preprocessor()), ("model", model)])
 
     # -------------------------------------------------------------- shared
+
+    def new_preprocessor(self):
+        """An unfitted ``ColumnTransformer`` for this family's features."""
+        return build_preprocessor(
+            self.numeric_features,
+            self.categorical_features,
+            scale_numeric=self.scale_numeric,
+        )
 
     @property
     def feature_columns(self) -> list[str]:
@@ -369,14 +343,13 @@ class BaseTrainer(ABC):
 
     @property
     def model_type(self) -> str:
-        """``metadata.json``'s ``model_type``: ``"<kind>:<name>"``."""
-        return f"{self.kind}:{self.name}"
+        """``metadata.json``'s ``model_type``, which is the family key."""
+        return self.kind
 
     def get_params(self) -> dict:
         """Flat, loggable view of what this trainer is - tracker params."""
         params = {
             "trainer": self.kind,
-            "model_name": self.name,
             "task": self.task,
             "seed": self.seed,
             "cv_mode": self.cv_mode,
@@ -391,15 +364,14 @@ class BaseTrainer(ABC):
         """The config round-trip: enough to rebuild an unfitted twin.
 
         Stored as ``metadata.json``'s ``hyperparameters``, which is what
-        :meth:`load` reads back. ``model_class`` is the reload guard:
-        a spec written by one trainer class must never be handed to
-        another. Subclasses contribute their harness knobs through
+        :meth:`load` reads back. ``model_class`` is the reload guard - a
+        spec written by one trainer class must never be handed to another.
+        Subclasses contribute their harness knobs through
         :meth:`extra_spec`.
         """
         return {
             "model_class": type(self).__name__,
             "trainer": self.kind,
-            "name": self.name,
             "params": self.params,
             "best_params": self.best_params,
             "task": self.task,
@@ -430,7 +402,6 @@ class BaseTrainer(ABC):
                 "the run was produced by a different trainer"
             )
         trainer = cls(
-            name=spec["name"],
             params=spec.get("params", {}),
             task=spec.get("task", "classification"),
             seed=spec.get("seed", 42),

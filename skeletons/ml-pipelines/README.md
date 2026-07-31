@@ -2,9 +2,9 @@
 
 Four config-driven pipelines — **data**, **training**, **inference**,
 **evaluation** — sharing one utils package, one metric definition, and one
-trainer contract. Model families (`sklearn`, `lightgbm`, `torch`) plug in
-behind that contract, so swapping one is a config flag and never a code
-change.
+trainer contract. Model families (`logreg`, `random_forest`, `lightgbm`,
+`xgboost`, `torch`) plug in behind that contract, so swapping one is a
+config flag and never a code change.
 
 Design provenance: `docs/specs/2026-07-30-pipeline-skeletons-design.md`
 (decisions D1–D13, revision R1).
@@ -77,13 +77,13 @@ model-input table
   → trainer.save(run_dir) + metadata + snapshot + pointers
 ```
 
-There is no `if trainer.name == ...` anywhere in `pipeline.py`, and adding
+There is no `if trainer.kind == ...` anywhere in `pipeline.py`, and adding
 a model family never touches it.
 
 ### Inference: metadata-first, trainer-agnostic
 
-`metadata.json` records `model_type` as `"<kind>:<name>"`. The loader maps
-the kind to a trainer class through the registry and calls that class's
+`metadata.json` records `model_type`, which is the family key. The loader
+maps it to a trainer class through the registry and calls that class's
 `load(run_dir)`. A LightGBM run and a torch run reload through identical
 code — which is the whole point of the contract, and the thing that would
 quietly rot if the loader ever grew a branch on model family.
@@ -110,40 +110,71 @@ hooks and two methods; the base gives them three services for free.
 | Member | Who writes it | Why |
 |---|---|---|
 | `_build_model()` | subclass | A **fresh**, seeded, unfitted estimator. Called per train, per CV fold, per tuning trial — a shared object is what makes cross-validation dishonest. |
-| `_get_param_space(trial)` | subclass | The Optuna search space, in the estimator's own parameter names. |
-| `train(X, y, X_val, y_val)` | subclass | Validation data is in the *signature* because two of three trainers need it during the fit. |
+| `_get_param_space(trial)` | subclass | That family's own Optuna space, in the estimator's own parameter names. |
+| `train(X, y, X_val, y_val)` | subclass | Validation data is in the *signature* because three of the five trainers need it during the fit. |
 | `predict` / `predict_proba` | subclass / optional | `predict_proba` returns None when the family has none, rather than faking probabilities. |
 | `evaluate(X, y, metrics=…)` | **base** | So no family scores itself with its own metric definition. |
 | `cross_validate(X, y, cv, metrics)` | **base** | Fresh model per fold; the splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
 | `hyperparameter_tune(...)` | **base** | Optuna over `_get_param_space`; winners are folded into `params` so the next `train` actually uses them. |
+| `log_model(tracker, example)` | subclass | The fitted model in that family's own MLflow flavor. See below. |
 | `save(run_dir) → files map` | subclass | Returns `{kind: filename}` verbatim for `metadata.json`. Filenames, never paths. |
 | `load(run_dir)` | subclass | **Metadata-first**: read `metadata.json`, check the recorded `model_class`, rebuild from the spec, then load weights. Config files are never consulted — they may have moved on. |
 | `spec()` / `get_params()` | base | `spec` is the config round-trip (what `load` reads back); `get_params` is the flat, loggable view. Separate on purpose. |
 
-Shipped trainers:
+### One class per family
 
-- **`SklearnTrainer`** — `ColumnTransformer` + estimator in one sklearn
-  `Pipeline`, so preprocessing and model serialize as a single artifact
-  and can never drift apart at serving time (D6).
-- **`LightGBMTrainer`** — its own fit path, because `eval_set` early
-  stopping needs the *transformed* validation matrix, which a `Pipeline`'s
-  fit signature cannot carry. Stores the same one-file artifact.
-- **`TorchTrainer`** — the DL harness (epoch loops, early stopping via
-  `early-stopping-pytorch`, `ReduceLROnPlateau`, NaN guard, checkpointing,
-  device pinning, overfit-one-batch check) as trainer internals in
-  `modules/`. It uses the same preprocessing as the others, so it accepts
-  the same raw frame — categoricals included. It overrides
-  `cross_validate` (refuses: a torch module is not a sklearn estimator)
-  and `hyperparameter_tune` (holdout per trial, not k-fold).
+`trainer.kind` **is** the family: the same string names the trainer class,
+its config group file, and `model_type` in the saved metadata. There is no
+generic "sklearn trainer" with an estimator name inside it — a family is
+defined by its search space as much as by its constructor, and a shared
+lookup table has nowhere to put that.
 
-Adding a family: implement the class, register it in
-`classes/registry.py`, add `configs/trainer/<name>.yaml`. Nothing else
-changes — and `tests/test_trainers.py` should pass for it unmodified.
+| `kind` | Class | Extra | Notes |
+|---|---|---|---|
+| `logreg` | `LogisticRegressionTrainer` | — | Coupled space: the solver is sampled first and the penalty derived from it, so no trial is spent on an illegal combination. |
+| `random_forest` | `RandomForestTrainer` | — | Classifier or regressor from the run's `task`. The shipped default. |
+| `lightgbm` | `LightGBMTrainer` | `lightgbm` | Its own fit path: `eval_set` early stopping needs the *transformed* validation matrix, which a `Pipeline`'s fit signature cannot carry. |
+| `xgboost` | `XGBoostTrainer` | `xgboost` | Same reason, different wiring — `early_stopping_rounds` is a constructor argument and raises without an `eval_set`, so it is attached only when there is a validation split. |
+| `torch` | `TorchTrainer` | `torch` | The DL harness (epoch loop, early stopping, `ReduceLROnPlateau`, NaN guard, checkpointing, device pinning, overfit-one-batch check) as internals in `modules/`. Overrides `cross_validate` (refuses: a torch module is not a sklearn estimator) and `hyperparameter_tune` (holdout per trial, not k-fold). |
+
+What is shared is *plumbing*, not identity: `classes/sklearn_common.py`
+holds the `Pipeline(preprocess, model)` artifact mechanics — assemble,
+predict, joblib save/load — that all four tabular families reuse, plus the
+plain one-shot fit that logreg and random forest share. Every family still
+writes its own `_build_model` and its own space.
+
+All of them serialize preprocessing and model **together** (D6), so the
+inference path cannot tell them apart and preprocessing can never drift
+from the model it was fitted beside.
+
+Adding a family: implement the class, add one entry to `TRAINERS` in
+`classes/__init__.py`, add `configs/trainer/<kind>.yaml`, and add it to
+`ALL_TRAINERS` in `tests/conftest.py`. Nothing else changes — and
+`tests/test_trainers.py` should pass for it unmodified.
+
+### Model logging: curated flavors, no autolog
+
+Each trainer logs its own fitted model in its own MLflow flavor
+(`mlflow.sklearn`, `mlflow.lightgbm`, `mlflow.xgboost`, `mlflow.pytorch`)
+after the fit, via `save_model` + `tracker.log_artifacts` — never the
+fluent `mlflow.<flavor>.log_model`, because the core `Tracker` drives
+`MlflowClient` with an explicit `run_id` precisely to avoid fluent global
+state. Signature inference is best-effort; a failure warns and the run
+keeps everything it already wrote.
+
+Autolog is deliberately not offered: it dumps per-version parameter sets
+nobody curated, fires on every cross-validation and tuning fit rather than
+on the run's model, and cannot attach this run's split fingerprints.
+
+Where a flavor stores a bare booster or module rather than a pipeline
+(lightgbm, xgboost, torch), the logged input example is the **transformed**
+design matrix, so the recorded signature describes what that artifact
+actually accepts.
 
 ## Running it
 
 ```bash
-uv sync --extra lightgbm --extra torch --extra tune --extra dev
+uv sync --extra lightgbm --extra xgboost --extra torch --extra tune --extra dev
 python run_data.py                       # -> data/processed/model_input.parquet
 python run_training.py                   # -> outputs/training/<ts>/
 python run_inference.py                  # -> outputs/inference/predictions.parquet
@@ -162,6 +193,7 @@ reproducible as an edit:
 ```bash
 python run_training.py trainer=logreg
 python run_training.py trainer=mlp trainer.torch.epochs=50 trainer.torch.patience=8
+python run_training.py trainer=xgboost trainer.xgboost.early_stopping_rounds=20
 python run_training.py trainer=lightgbm trainer.tune.enabled=true trainer.tune.n_trials=40
 # `+` because boundaries starts empty: Hydra appends new keys, overrides existing ones.
 python run_training.py split.mode=temporal \

@@ -3,7 +3,7 @@
 Deliberately thin (R1.5). It owns the split, the run directory and the
 artifacts; it does **not** own how any model family is fitted. Everything
 model-shaped goes through the trainer built from the ``trainer/`` config
-group, so this file has no ``if trainer.name == ...`` in it and adding a
+group, so this file has no ``if trainer.kind == ...`` in it and adding a
 family never touches it.
 
     model-input table
@@ -12,6 +12,7 @@ family never touches it.
       -> [optional] trainer.hyperparameter_tune(...)
       -> trainer.train(train, val)
       -> trainer.evaluate(each split)
+      -> trainer.log_model(tracker)  [MLflow flavor, when tracking is live]
       -> trainer.save(run_dir) + metadata + snapshot + pointers
 
     outputs/training/<timestamp>/
@@ -45,10 +46,14 @@ from ...core.tracking import init_tracking
 from ...schemas import TrainingConfig
 from ..data_pipeline.classes.dataset_writer import load_manifest
 from ..evaluation_pipeline.modules.metrics import log_metrics, prefixed
-from .classes.registry import build_trainer
+from .classes import build_trainer
 from .modules.splitting import record_splits, resolve_feature_columns, split_frame
 
 logger = logging.getLogger(__name__)
+
+# Rows of the training split sent along as the logged model's input example.
+# Enough to infer a signature, few enough to stay a sample.
+_MODEL_EXAMPLE_ROWS = 5
 
 
 class TrainingPipeline:
@@ -113,6 +118,7 @@ class TrainingPipeline:
 
             metrics = self._evaluate(trainer, X, y)
             self._log_run(tracker, trainer, frames, fingerprints, metrics)
+            self._log_model(tracker, trainer, X["train"])
 
             with stage_timer("persist", tracker):
                 files = trainer.save(run_dir)
@@ -169,6 +175,24 @@ class TrainingPipeline:
             step = record.get("epoch")
             tracker.log_metrics({k: v for k, v in record.items() if k != "epoch"}, step)
         tracker.log_metrics(metrics)
+
+    def _log_model(self, tracker, trainer, X_train) -> None:
+        """Log the fitted model in its own MLflow flavor, curated (D3).
+
+        Autolog is deliberately not used: it dumps per-version parameter
+        sets nobody curated, fires on every CV and tuning fit rather than
+        on the run's model, and cannot attach this run's split
+        fingerprints. Each trainer instead logs its own flavor once.
+
+        Failures warn: a model that could not be logged must not cost the
+        run the artifacts it already wrote (core tracking contract).
+        """
+        if not tracker.live:
+            return
+        try:
+            trainer.log_model(tracker, X_train.head(_MODEL_EXAMPLE_ROWS))
+        except Exception as e:
+            logger.warning("Model logging failed (%s); the run itself is intact", e)
 
     # ----------------------------------------------------------- persistence
 

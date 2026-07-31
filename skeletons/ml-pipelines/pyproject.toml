@@ -15,10 +15,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# One group per trainer that is not needed to run the scaffold as shipped.
-# `trainer=lightgbm` and `trainer=mlp` each name their group in the error
-# they raise, so a missing extra is a one-line fix, not a traceback hunt.
+# One group per trainer family that is not needed to run the scaffold as
+# shipped. `trainer=lightgbm`, `trainer=xgboost` and `trainer=mlp` each name
+# their group in the error they raise, so a missing extra is a one-line fix,
+# not a traceback hunt.
 lightgbm = ["lightgbm>=4.0"]
+xgboost = ["xgboost>=2.0"]
 torch = ["torch>=2.0", "early-stopping-pytorch>=1.0"]
 # Hyperparameter search. Only hyperparameter_tune imports it.
 tune = ["optuna>=3.6"]
