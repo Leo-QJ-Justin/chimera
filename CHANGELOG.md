@@ -4,6 +4,43 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.3.0] - 2026-07-31
+
+### Added
+- `skeletons/ml-pipelines/` — self-contained ML Pipelines scaffold: four
+  config-driven pipelines (data, training, inference, evaluation), each
+  with `classes/`, `modules/`, and its own Hydra `configs/` directory,
+  over an in-tree `core/` utils package (MLflow tracking with explicit
+  run IDs and a JSONL metrics sidecar, run artifacts with latest/best
+  pointers, split-membership persistence, seeding, logging, timing,
+  pydantic config). Per-family trainers (`logreg`, `random_forest`,
+  `lightgbm`, `xgboost`, `torch`) behind one `BaseTrainer` contract with
+  per-family Optuna spaces and Hydra `trainer` config group; curated
+  MLflow flavor model logging (no autolog); leakage-as-architecture
+  boundaries (data pipeline never splits or fits; training owns split,
+  fitted preprocessing, model; evaluation consumes the inference
+  pipeline's predictions). 241 tests ship with the scaffold.
+- Diagnostic artifacts, split by what they need: model-based figures
+  (training curves from per-iteration history including booster eval
+  curves, feature importances/coefficients, config-gated SHAP) draw
+  post-fit in the training pipeline; prediction-based figures (confusion
+  matrix, ROC/PR/calibration, residuals) draw in the evaluation pipeline
+  and embed in `report.md`. Everything mirrors to MLflow via the
+  whole-run-dir upload; `shap` is the optional `explain` extra.
+- `skeletons/README.md` — scaffold inventory, pipeline contracts,
+  evaluation protocol decision table, scaffolding steps.
+- Design provenance: `docs/specs/2026-07-30-pipeline-skeletons-design.md`
+  (D1–D13 + revisions R1.1–R1.9) and five evidence trawl reports under
+  `docs/research/`.
+
+### Changed
+- `/design-project` Phase 5 now scaffolds ML/data and hybrid projects
+  from `skeletons/ml-pipelines/` (copy → rename `src/PROJECT/` → set
+  pyproject name).
+
+### Deferred
+- AI Application scaffold (second skeleton type, R1.1).
+
 ## [1.2.1] - 2026-07-30
 
 ### Changed

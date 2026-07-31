@@ -1,6 +1,6 @@
 {
   "name": "chimera",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Self-contained personal harness: a mode-aware (build|exploration) feature-development loop with project-genesis and scaffolding commands. Skills adapted from Superpowers; review agent adapted from Everything Claude Code.",
   "author": { "name": "Leo Q.J.", "url": "https://github.com/Leo-QJ-Justin" },
   "homepage": "https://github.com/Leo-QJ-Justin/chimera",
