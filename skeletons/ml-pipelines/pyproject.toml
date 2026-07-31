@@ -41,9 +41,8 @@ select = ["E", "W", "F", "I", "N", "UP"]
 ignore = ["N803", "N806"]
 
 [tool.ruff.lint.isort]
-# Without this, `PROJECT.core` looks third-party in the template (the dir is
-# empty until scaffold time) and first-party afterwards - and import sorting
-# would flip the moment core lands. Rename with the package.
+# Pin the package as first-party so import sorting is stable regardless of
+# whether the environment has it installed. Rename with the package.
 known-first-party = ["PROJECT", "conftest"]
 
 [tool.ruff.lint.per-file-ignores]

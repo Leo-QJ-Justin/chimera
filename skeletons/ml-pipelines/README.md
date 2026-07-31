@@ -201,7 +201,8 @@ a rename touches only the directory name and the literal `PROJECT` in
 files outside the package:
 
 ```bash
-grep -rl PROJECT . --exclude-dir=.git | xargs sed -i 's/PROJECT/my_package/g'
+grep -rIl PROJECT . --exclude-dir={.git,outputs,logs,data,.venv} \
+  | xargs sed -i 's/PROJECT/my_package/g'
 mv src/PROJECT src/my_package
 ```
 

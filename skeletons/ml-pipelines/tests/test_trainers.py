@@ -15,7 +15,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from conftest import LIGHTGBM_TRAINER, SKLEARN_TRAINER, TEST_SEED, TORCH_TRAINER
+from conftest import (
+    LIGHTGBM_TRAINER,
+    SKLEARN_TRAINER,
+    TEST_SEED,
+    TEST_TRAIN_SIZE,
+    TORCH_TRAINER,
+)
 from PROJECT.core.run_artifacts import save_metadata
 from PROJECT.pipelines.training_pipeline import build_trainer
 from PROJECT.pipelines.training_pipeline.classes.registry import (
@@ -195,6 +201,54 @@ class TestTorchOverrides:
         assert "options__lr" in best
         assert trainer.options.lr == best["options__lr"]
         assert trainer.params["dropout"] == best["params__dropout"]
+
+
+class TestTorchRegressionAndCheckpoints:
+    """Review-gate regressions: the scalar head and honest checkpoints."""
+
+    @_needs("torch", "torch", "early_stopping_pytorch")
+    def test_regression_head_trains_and_predicts(self, synthetic_frame):
+        import numpy as np
+
+        trainer = build_trainer(
+            TrainerConfig(**TORCH_TRAINER),
+            task="regression",
+            seed=TEST_SEED,
+            cv_mode="stratified",
+            numeric_features=["num_b"],
+            categorical_features=["cat_a"],
+        )
+        X = synthetic_frame[["num_b", "cat_a"]]
+        y = synthetic_frame["num_a"]  # continuous target
+        cut = int(len(X) * TEST_TRAIN_SIZE)
+        trainer.train(X.iloc[:cut], y.iloc[:cut], X.iloc[cut:], y.iloc[cut:])
+        assert trainer.n_outputs == 1
+        preds = trainer.predict(X.iloc[cut:])
+        assert preds.shape == (len(X) - cut,)
+        assert np.isfinite(preds).all()
+
+    @_needs("torch", "torch", "early_stopping_pytorch")
+    def test_checkpoint_last_records_final_state_not_best(self, tmp_path, features, xy):
+        """`resume: continue` must resume the last epoch, not the best one.
+
+        The served model is rewound to the best weights after training, so
+        `save` must write checkpoint_last from the pre-rewind snapshot. The
+        snapshot is perturbed here to make the two distinguishable even when
+        the best epoch happened to be the final one.
+        """
+        import torch
+
+        trainer = _build(TORCH_TRAINER, features)
+        trainer.train(*xy)
+        if trainer._best_state is None:
+            pytest.skip("no best checkpoint written this run")
+        bumped = {k: v + 1.0 for k, v in trainer._last_state.items()}
+        trainer._last_state = bumped
+        files = trainer.save(tmp_path)
+        last = torch.load(tmp_path / files["checkpoint_last"], weights_only=False)
+        assert all(torch.equal(last["model_state_dict"][k], v) for k, v in bumped.items())
+        best = torch.load(tmp_path / files["checkpoint_best"], weights_only=False)
+        assert any(not torch.equal(best[k], v) for k, v in bumped.items())
 
 
 def _write_metadata(run_dir, trainer, files: dict) -> None:

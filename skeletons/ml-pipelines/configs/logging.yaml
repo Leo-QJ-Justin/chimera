@@ -1,6 +1,6 @@
 # dictConfig used by core.logging_setup.configure_logging(config_path=...).
 #
-# Adapted from the AISG canon: console plus level-split rotating file
+# Console plus level-split rotating file
 # handlers, `delay: true` so no file is created until something is actually
 # logged (matters in read-only containers). Two deliberate changes:
 #   - stdlib Formatter instead of pythonjsonlogger, so there is no extra

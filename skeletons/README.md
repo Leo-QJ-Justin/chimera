@@ -15,14 +15,16 @@ Design provenance: `docs/specs/2026-07-30-pipeline-skeletons-design.md`
 ## The ML Pipelines scaffold in one paragraph
 
 Four pipelines, each with `classes/` (stateful objects behind an ABC),
-`modules/` (stateless functions), and a thin `pipeline.py` orchestrator;
-Hydra configs at the repo root with pydantic validation on top; MLflow
-tracking on by default (sqlite backend) with a JSONL metrics sidecar;
-run artifacts under `outputs/<pipeline>/<timestamp>/` with
-latest/best pointers, config snapshots, and recorded split membership.
-Model families plug in as **trainers** (`sklearn`, `lightgbm`, `torch`)
-behind one `BaseTrainer` contract selected by the Hydra `model` group —
-the training pipeline just builds the configured trainer and fits.
+`modules/` (stateless functions), its own `configs/` directory, and a
+thin `pipeline.py` orchestrator; shared settings live once at
+`configs/shared/base.yaml` (reached via Hydra searchpath) with pydantic
+validation on top; MLflow tracking on by default (sqlite backend) with a
+JSONL metrics sidecar; run artifacts under `outputs/<pipeline>/<timestamp>/`
+with latest/best pointers, config snapshots, and recorded split
+membership. Model families plug in as **trainers** (`sklearn`,
+`lightgbm`, `torch`) behind one `BaseTrainer` contract selected by the
+Hydra `trainer` config group — the training pipeline just builds the
+configured trainer and fits.
 
 ## The contracts every pipeline honours
 

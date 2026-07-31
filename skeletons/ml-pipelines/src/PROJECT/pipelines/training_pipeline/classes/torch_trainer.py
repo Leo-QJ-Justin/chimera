@@ -52,6 +52,7 @@ from ..modules.checkpointing import (
     load_checkpoint,
     resume,
     save_checkpoint,
+    strip_module_prefix,
 )
 from ..modules.datasets import TabularTensorDataset, make_loaders
 from ..modules.device import describe_device, setup_device, wrap_model
@@ -121,6 +122,7 @@ class TorchTrainer(BaseTrainer):
         self.device = None
         self._optimizer = None
         self._best_state: dict | None = None
+        self._last_state: dict | None = None
         self.summary: dict = {}
 
     def extra_spec(self) -> dict:
@@ -183,6 +185,13 @@ class TorchTrainer(BaseTrainer):
         import torch
 
         options = self.options
+        if options.deterministic_cudnn:
+            # Determinism costs speed and can raise on ops without
+            # deterministic kernels - which is why it is opt-in config,
+            # not a default.
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            logger.info("Deterministic cuDNN kernels pinned (opt-in)")
         self.preprocessor = build_preprocessor(
             self.numeric_features, self.categorical_features
         )
@@ -334,12 +343,19 @@ class TorchTrainer(BaseTrainer):
 
         Without this, ``evaluate`` and the metrics written into metadata
         would describe an epoch nobody chose - the one that happened to be
-        last when patience ran out.
+        last when patience ran out. The raw final state is snapshotted
+        first so ``checkpoint_last.pt`` stays honest and
+        ``resume: continue`` really continues from the last epoch rather
+        than silently from the best one.
         """
         if not Path(best_path).exists():
             logger.warning("No best checkpoint written; keeping final weights")
             self._best_state = None
+            self._last_state = None
             return
+        self._last_state = strip_module_prefix(
+            {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
+        )
         checkpoint = load_checkpoint(best_path, self.model, map_location="cpu")
         self._best_state = checkpoint["model_state_dict"]
         logger.info("Restored best-monitored weights into the served model")
@@ -382,6 +398,12 @@ class TorchTrainer(BaseTrainer):
         a sklearn scoring string - there is no sklearn scorer to hand a
         torch module to. When ``metric`` is None both it and ``direction``
         come from the task.
+
+        Known bias: trials are scored on the same holdout they
+        early-stopped against, so the selected score is optimistic. The
+        honest number remains the training pipeline's untouched test
+        split; use k-fold (at k times the cost) if trial selection
+        itself must be unbiased.
 
         Returns:
             The best parameters found, already folded into ``params`` /
@@ -525,12 +547,16 @@ class TorchTrainer(BaseTrainer):
 
         self.check_fitted()
         run_dir = Path(run_dir)
+        # The served model was rewound to the best-monitored weights, so the
+        # last checkpoint is written from the snapshot taken before rewinding
+        # - otherwise `resume: continue` would silently be `from_best`.
         save_checkpoint(
             run_dir / LAST_CHECKPOINT,
             self.model,
             self._optimizer,
             epoch=self.summary.get("last_epoch", -1),
             metrics=self.summary.get("final_metrics", {}),
+            state_dict=self._last_state,
         )
         joblib.dump(self.preprocessor, run_dir / PREPROCESSOR_FILENAME)
         files = {
@@ -577,6 +603,8 @@ class TorchTrainer(BaseTrainer):
         """Original labels -> contiguous class indices (classification only)."""
         y = np.asarray(y)
         if not self._is_classification:
+            if fit:
+                self.n_outputs = 1  # scalar regression head
             return y.astype(np.float32)
         if fit:
             self.classes = np.unique(y).tolist()

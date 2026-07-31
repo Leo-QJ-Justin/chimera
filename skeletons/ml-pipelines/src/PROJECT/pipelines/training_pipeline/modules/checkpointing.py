@@ -36,6 +36,7 @@ def save_checkpoint(
     optimizer=None,
     epoch: int = 0,
     metrics: dict | None = None,
+    state_dict: dict | None = None,
 ) -> Path:
     """Write the checkpoint dict (never a pickled module).
 
@@ -48,6 +49,10 @@ def save_checkpoint(
             different training trajectory).
         epoch: Epoch index this checkpoint represents.
         metrics: The epoch's metric dict, stored for at-a-glance triage.
+        state_dict: Optional explicit (unprefixed) state dict to store
+            instead of the model's current one - used when the served
+            model has been rewound to the best weights but the checkpoint
+            must record the final training state.
 
     Returns:
         The written path.
@@ -55,7 +60,11 @@ def save_checkpoint(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "model_state_dict": strip_module_prefix(_unwrap(model).state_dict()),
+        "model_state_dict": (
+            state_dict
+            if state_dict is not None
+            else strip_module_prefix(_unwrap(model).state_dict())
+        ),
         "optimizer_state_dict": optimizer.state_dict() if optimizer is not None else None,
         "epoch": epoch,
         "metrics": metrics or {},

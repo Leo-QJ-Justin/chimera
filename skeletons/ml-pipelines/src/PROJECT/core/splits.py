@@ -3,7 +3,7 @@
 Seed + protocol is the *generator* of a split; the artifact written here
 is the *record*. Membership is stored as stable row keys (entity id,
 timestamp, or a durable sample id), never positional indices - positional
-indices break silently when the gold table is regenerated.
+indices break silently when the model-input table is regenerated.
 
 The fingerprint (sha256 of the sorted membership) is logged as a run
 param so split-identity across runs is checkable at a glance.
@@ -83,7 +83,7 @@ def load_splits(run_dir: str | Path) -> dict:
 
 
 def apply_splits(df: pd.DataFrame, splits_payload: dict) -> dict[str, pd.DataFrame]:
-    """Reproduce a recorded split exactly on a (regenerated) gold table.
+    """Reproduce a recorded split exactly on a (regenerated) model-input table.
 
     Raises:
         ValueError: If any recorded member is absent from the frame - the
