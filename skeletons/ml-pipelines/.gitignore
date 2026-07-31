@@ -1,0 +1,21 @@
+# Derived data: regenerate with run_data.py, never commit.
+data/processed/
+data/splits/
+
+# Run artifacts and logs.
+outputs/
+logs/
+
+# Tracking stores.
+mlflow.db
+mlruns/
+
+# Working plans.
+plans/
+
+# Python noise.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/

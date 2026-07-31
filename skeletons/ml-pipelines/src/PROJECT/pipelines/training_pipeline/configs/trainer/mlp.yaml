@@ -1,0 +1,79 @@
+# @package trainer
+#
+# Config group: pick with `python run_training.py trainer=mlp`.
+# Requires the `torch` optional dependency group (torch +
+# early-stopping-pytorch).
+#
+# The file is named for the architecture, `kind` for the family: one torch
+# trainer, whose module is the MLP in modules/architectures.py. Another
+# architecture is another trainer class overriding _build_model, plus its
+# own file here.
+#
+# The split between `params` and `torch` is deliberate: `params` is the
+# *architecture* (what the saved checkpoint's shapes depend on, and what
+# metadata.json must carry to rebuild the module), `torch` is the *harness*
+# (what the training loop does).
+kind: torch
+
+params:
+  hidden_sizes: [128, 64]
+  dropout: 0.2
+
+torch:
+  # Optimisation
+  lr: 0.001
+  weight_decay: 0.0
+  epochs: 30
+  batch_size: 32
+
+  # Early stopping + checkpointing. `monitor` is the single source of truth
+  # for "better": the early stopper and the LR scheduler both read it, so a
+  # max-mode metric never needs a `Const - error` inversion hack.
+  patience: 5
+  monitor:
+    name: val_loss   # any key emitted per epoch: train_loss|val_loss|train_metric|val_metric|lr
+    mode: min        # min for loss-like, max for score-like
+
+  # Plateau LR schedule (stepped on the monitored value, same mode).
+  lr_factor: 0.5
+  lr_patience: 2
+  min_lr: 1.0e-6
+
+  # Resume semantics are a named choice, not an implied behaviour:
+  #   continue  - keep training the interrupted trajectory (last checkpoint)
+  #   from_best - rewind to the best-monitored weights and branch
+  resume: continue
+  resume_from: null   # a prior run dir, e.g. outputs/training/20260730_120000
+
+  # Sub-epoch sampling for large datasets: fraction of the training split
+  # drawn per epoch via RandomSampler (re-drawn each epoch, never a break).
+  subsample_frac: 1.0
+
+  # Overfit-one-batch check before the real run. Opt-in: it costs seconds and
+  # catches the wiring bugs that otherwise cost an afternoon, but it is noise
+  # in a tuning sweep.
+  sanity_check: false
+
+  # Host-side loader knobs - a property of the machine, not the architecture.
+  num_workers: 0
+  pin_memory: false
+
+  # Device selection. `visible_devices` is written to the environment BEFORE
+  # torch imports CUDA (see modules/device.py).
+  device: auto            # auto -> cuda -> mps -> cpu; or "cuda:1" / "cpu"
+  visible_devices: null   # e.g. "0,1"
+  device_order: PCI_BUS_ID
+
+  # Opt-in: deterministic cuDNN kernels. Slower, and raises on ops with no
+  # deterministic implementation, so it is off by default.
+  deterministic_cudnn: false
+
+tune:
+  # TorchTrainer overrides the base tuner: `cv` is ignored and each trial
+  # trains on a held-out split instead (see classes/torch_trainer.py), and
+  # `metric` is a project metric alias rather than a sklearn scoring string.
+  enabled: false
+  n_trials: 10
+  cv: 3
+  metric: null        # null -> f1_macro (classification) / rmse (regression)
+  direction: maximize

@@ -1,0 +1,43 @@
+# Two-tier gates: cheap formatting/lint at commit, type-check and tests at
+# push. The push hooks run in *your* environment, so they carry an env
+# prefix you must adapt once per project.
+#
+#   adapt: `uv run <cmd>` (uv projects) or `conda run -n <env> <cmd>`
+#          or drop the prefix entirely if the hooks run in an already
+#          activated environment.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.10
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        stages: [pre-commit]
+      - id: ruff-format
+        stages: [pre-commit]
+
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        # adapt: uv run / conda run -n <env>
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: pytest
+        name: pytest
+        # adapt: uv run / conda run -n <env>
+        entry: uv run pytest
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      # Full-pipeline smoke as a hook is deliberately NOT enabled: it takes
+      # minutes and writes run dirs. Run it by hand before a release.
+      # - id: pipeline-smoke
+      #   entry: uv run python run_training.py

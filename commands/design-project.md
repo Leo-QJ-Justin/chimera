@@ -85,7 +85,17 @@ discipline. Reorderable; outcomes insert and remove rows.
 
 ## Phase 5 — SCAFFOLD
 
-Invoke `/new-project` (it will detect the existing docs and fill the
+**ML/data and hybrid projects:** scaffold from the ML Pipelines skeleton
+at `${CLAUDE_PLUGIN_ROOT}/skeletons/ml-pipelines/` — read
+`${CLAUDE_PLUGIN_ROOT}/skeletons/README.md` for the contracts and the
+scaffolding steps (copy the self-contained tree → rename `src/PROJECT/`
+→ set the pyproject name), and the scaffold's own README for the full
+rename checklist. Confirm the trainer default (`configs/trainer/`) and
+split protocol with your human partner from the PRD's scope. The
+system-design repo layout should have been drawn from the skeleton tree
+in Phase 3.
+
+Then invoke `/new-project` (it will detect the existing docs and fill the
 project CLAUDE.md from them). If the repo already existed, just commit the
 genesis docs: `git add docs/ && git commit -m "docs: project genesis - prd,
 architecture, system design, roadmap"`.

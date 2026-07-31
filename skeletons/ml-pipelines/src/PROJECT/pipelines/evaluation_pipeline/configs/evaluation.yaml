@@ -1,0 +1,53 @@
+defaults:
+  - shared/base
+  - _self_
+
+hydra:
+  searchpath:
+    - file://configs
+  job:
+    chdir: false
+  run:
+    dir: logs/hydra/${now:%Y%m%d_%H%M%S}
+
+logging:
+  log_prefix: evaluation
+
+mlflow:
+  experiment_name: PROJECT-evaluation
+
+# Inputs: predictions produced by run_inference.py, plus the model-input
+# table that carries the ground truth. Never a second sample-building path
+# (D4) - this pipeline only ever *joins* and *scores*.
+predictions_path: outputs/inference/predictions.parquet
+processed_path: data/processed/model_input.parquet
+output_dir: outputs/evaluation
+
+task: classification      # classification | regression
+target: target
+prediction_col: prediction
+key_cols: [entity_id, date]
+
+triage:
+  # Rows to list in the error table. Classification ranks misclassifications
+  # by the confidence of the wrong call (a confident mistake is the
+  # interesting one); regression ranks by |error|.
+  top_n: 20
+  # Extra columns to carry into the triage table so a bad row can be read
+  # without a second join. Empty -> keys, truth, prediction only.
+  drill_down_columns: []
+
+# Figures written to <run_dir>/plots/ and linked from report.md. The
+# confusion matrix (classification) and residuals (regression) need only
+# hard predictions; ROC, precision-recall and calibration additionally need
+# the proba_* columns inference writes when include_probabilities is on -
+# without them those three are skipped with a log line saying so.
+plots:
+  enabled: true
+
+# Compare this evaluation's headline metric against the value best.json
+# recorded at training time. A large gap usually means the two numbers are
+# not measuring the same thing - worth knowing before anyone quotes either.
+compare_to_best: true
+runs_dir: outputs/training
+selection_metric: f1_macro

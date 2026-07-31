@@ -1,0 +1,80 @@
+# Training pipeline config.
+#
+# `trainer` is a config group in ./trainer/: one file per model family,
+# carrying that family's own params and harness knobs. Switch families with
+# `python run_training.py trainer=mlp` - the orchestrator never learns which
+# one it got.
+defaults:
+  - shared/base
+  - trainer: random_forest
+  - _self_
+
+hydra:
+  searchpath:
+    - file://configs
+  job:
+    chdir: false
+  run:
+    dir: logs/hydra/${now:%Y%m%d_%H%M%S}
+
+logging:
+  log_prefix: training
+
+mlflow:
+  experiment_name: PROJECT-training
+
+processed_path: data/processed/model_input.parquet
+output_dir: outputs/training
+
+task: classification      # classification | regression
+target: target
+key_cols: [entity_id, date]
+
+# Leave both empty to infer by dtype (keys, target and datetime columns are
+# excluded). Declare them explicitly once the feature set stabilises - the
+# saved metadata then pins the exact order inference must reproduce.
+numeric_features: []
+categorical_features: []
+
+split:
+  # shuffle | stratified | temporal  (group: not implemented, see modules/splitting.py)
+  # This also picks the cross-validation splitter used by tuning (D9).
+  mode: stratified
+  train_size: 0.7
+  val_size: 0.15
+  test_size: 0.15
+  seed: 42
+  # Empty -> filled from the top-level key_cols.
+  key_cols: []
+  # temporal mode only:
+  time_col: date
+  boundaries: {}
+  # e.g. boundaries: {val_start: "2024-01-01", test_start: "2024-06-01"}
+  # From the CLI these are new keys, so they need a `+`:
+  #   +split.boundaries.val_start=2024-01-01 +split.boundaries.test_start=2024-06-01
+
+selection:
+  # Drives best.json. Validation - not test - decides which run is "best";
+  # test stays a reporting number.
+  metric: f1_macro
+  mode: max
+  split: val
+
+# Post-fit figures drawn from the fitted model itself, into
+# <run_dir>/plots/ (and therefore into MLflow, via the run-dir upload).
+# Curves come from whatever per-iteration history the family recorded -
+# every epoch for torch, every boosting round for lightgbm/xgboost, none
+# for a one-shot sklearn fit; importances/coefficients come from the
+# fitted estimator. Prediction-based figures (confusion matrix, ROC,
+# calibration, residuals) belong to the evaluation pipeline instead.
+diagnostics:
+  enabled: true
+  shap:
+    # Needs the optional 'explain' extra; without it this step logs one
+    # line and is skipped. Torch runs are skipped either way - gradient
+    # attributions for a neural net are a different tool.
+    enabled: true
+    # Validation rows to explain. Exact explainers are superlinear in rows
+    # and the beeswarm of 200 says what the beeswarm of 20,000 says.
+    sample_size: 200
+    max_display: 20

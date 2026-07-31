@@ -258,6 +258,122 @@ without defaults), compose with ro mounts, Dockerfile per D13.
 - Re-verifying Sembcorp screenshot transcriptions against original
   notebooks (research doc carries the caveat).
 
+## Revision R1 (maintainer review of first build, 2026-07-31)
+
+Maintainer feedback on the first built trees supersedes parts of D2 and
+the scaffold trees above:
+
+**R1.1 Two scaffold types, no tiers.** The deliverables are an **AI
+Application scaffold** (future task) and one **ML Pipelines scaffold**.
+The assessment / production / production-dl tier split is dropped; there
+is one production-level ML scaffold.
+
+**R1.2 Four pipelines.** `data_pipeline`, `training_pipeline`,
+`inference_pipeline`, and a dedicated **`evaluation_pipeline`** (consumes
+inference outputs plus ground truth: metrics report, residual/error
+triage, run comparison). D4 unchanged: evaluation feeds through the
+inference path for predictions.
+
+**R1.3 Production level by default.** MLflow integration is first-class
+and enabled by default in the base config (sqlite backend); run
+artifacts, config snapshots, split records all standard. "Bare minimum"
+is explicitly not the goal of the scaffold.
+
+**R1.4 dynamic-simu-model layout per pipeline.** Each pipeline directory
+carries `classes/` (stateful objects behind an ABC), `modules/`
+(stateless functions), `configs/` (that pipeline's YAML), and
+`pipeline.py` (orchestrator). `core/` remains the shared utils package
+all pipelines import.
+
+**R1.5 Trainer abstraction.** `training_pipeline/classes/` defines
+`BaseTrainer` (fit / predict / save / load contract) with concrete
+trainers configured externally via the Hydra model group — e.g.
+`SklearnTrainer`, `LightGBMTrainer`, `TorchTrainer` (the DL loops,
+callbacks, checkpointing, and device modules become TorchTrainer's
+internals). The train pipeline orchestrator stays thin: load gold →
+split → build trainer from config → fit → evaluate hook → persist.
+
+**R1.6 (follow-up, 2026-07-31): per-pipeline configs + evonik trainer
+contract.** Each pipeline also carries its own `configs/` directory
+(dynamic-simu-model layout confirmed against the repo), with one shared
+`configs/shared/base.yaml` at root reached via Hydra searchpath. Every
+trainer has a config file tagged to it as a Hydra group
+(`training_pipeline/configs/trainer/<name>.yaml`) composed into the
+training config — selection is `trainer=<name>` on the CLI. The
+`BaseTrainer` contract follows the maintainer's evonik-temp
+`BaseModel` (the more complete variant): abstract `_build_model()` +
+`_get_param_space(trial)` + `train`/`predict`; concrete on the base:
+`evaluate(metrics=[str|callable])`, `cross_validate` (fresh model per
+run), and `hyperparameter_tune` (full Optuna loop). Merged with existing
+decisions rather than copied verbatim: metadata-first save/load with a
+recorded `model_class` check (not bare joblib), CV splitter chosen from
+the split config mode per D9 (not hardcoded `TimeSeriesSplit`), seed
+threaded from config, optuna as a guarded optional dependency.
+
+**R1.7 (follow-up, 2026-07-31): no medallion jargon.** The layered-output
+concept stays, the naming goes: no "bronze/silver/gold" in class names,
+file names, config keys, or docs. The data pipeline saves **stage
+checkpoints** — config lists which stage boundaries to persist
+(`checkpoints: [cleaned, features]` → `data/processed/<stage>.parquet`)
+— and its final output is the processed/model-input table
+(`processed_path`), which the training pipeline consumes. Where earlier
+sections of this spec say "gold table", read "processed table".
+
+**R1.8 (follow-up, 2026-07-31): the scaffold is self-contained.**
+`core/` lives *inside* the scaffold (`ml-pipelines/src/PROJECT/core/`)
+with its test suite in the scaffold's `tests/`, not as a separate
+`skeletons/core/` copied in at scaffold time. Rationale: after R1.1
+there is exactly one consumer; the copy-at-scaffold-time indirection
+made the in-repo template non-runnable and added a botchable step. If a
+future scaffold needs shared utils, factor then — don't pre-abstract
+for a consumer that doesn't exist.
+
+**R1.9 (follow-up, 2026-07-31): diagnostic artifacts, split by what they
+need.** The first build logged numbers and models but drew no figures —
+matplotlib was not even a dependency, and LightGBM/XGBoost discarded their
+eval curves entirely. Diagnostics are now first-class, split across the two
+pipelines by their input rather than by their subject matter:
+
+| Diagnostic | Needs | Pipeline | Applies to |
+|---|---|---|---|
+| Training curves | per-iteration history | training (post-fit) | torch, lightgbm, xgboost |
+| Feature importances | `estimator.feature_importances_` | training (post-fit) | random_forest, lightgbm, xgboost |
+| Coefficients | `estimator.coef_` | training (post-fit) | logreg |
+| SHAP beeswarm / bar | model internals + a data sample | training (post-fit) | all but torch; config-gated |
+| Confusion matrix | hard predictions | evaluation | classification |
+| ROC / PR curves | `proba_*` columns | evaluation | classification |
+| Calibration | `proba_*` columns | evaluation | binary classification |
+| Residuals, predicted-vs-actual | hard predictions | evaluation | regression |
+
+The line is model-based vs prediction-based. SHAP needs the estimator, not
+its outputs, so it cannot live in the evaluation pipeline; the confusion
+matrix needs only the predictions table, so putting it in training would
+mean training scoring a sample a second time — the thing D4 exists to
+prevent. Trainers stay tracking-free and plotting-free: a booster now
+*captures* its eval record into `history` (via `record_evaluation` /
+`evals_result()`, flattened by `modules/history.py`), and the orchestrator
+replays that into MLflow step-wise exactly as it already did for torch.
+
+**Hand-rolled over `mlflow.models.evaluate`:** the evaluate API wants
+fluent global run state, and its score-based artifacts want a loadable
+model rather than a predictions table, whereas the core
+`Tracker` drives `MlflowClient` with an explicit `run_id` precisely to
+avoid fluent state — and these figures must also work with tracking off.
+Hand-rolled sklearn + matplotlib gives a curated artifact set and works
+offline. No new tracking surface was needed: both pipelines already upload
+their whole run directory, so anything written into `<run_dir>/plots/`
+mirrors to MLflow for free.
+
+**Dependencies:** `matplotlib` becomes a **core** dependency (curves are
+part of what a run is expected to produce, so they must not be what a
+missing install silently drops); `shap` is the optional `explain` extra,
+guarded with the same `_import_<lib>()` pattern the trainer families use —
+absent, the step logs one line and is skipped. Kill switches:
+`diagnostics.enabled` / `diagnostics.shap.enabled` (training),
+`plots.enabled` (evaluation). Every diagnostic is individually wrapped in
+the warn-and-continue pattern: a figure that cannot be drawn costs the run
+one log line, never the artifacts it already wrote.
+
 ## Build plan (next task, via /start-task)
 
 1. `skeletons/` in chimera: `core/` utils package first (D3, D8, D10, D11,

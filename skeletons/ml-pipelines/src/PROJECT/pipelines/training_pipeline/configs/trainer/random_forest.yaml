@@ -1,0 +1,22 @@
+# @package trainer
+#
+# Config group: pick with `python run_training.py trainer=random_forest`.
+#
+# Handles both tasks: the trainer picks RandomForestClassifier or
+# RandomForestRegressor from the run's `task`.
+kind: random_forest
+
+params:
+  n_estimators: 300
+  max_depth: null
+  min_samples_leaf: 1
+  max_features: sqrt
+
+tune:
+  # Optuna over classes/random_forest_trainer.py's own space (n_estimators,
+  # max_depth, min_samples_leaf, max_features).
+  enabled: false
+  n_trials: 20
+  cv: 3
+  metric: null
+  direction: maximize
