@@ -10,11 +10,26 @@ family never touches it.
       -> split (recorded by stable key + fingerprint)
       -> build_trainer(cfg.trainer)
       -> [optional] trainer.hyperparameter_tune(...)
-      -> trainer.train(train, val)
+      -> trainer.train(...)
       -> trainer.evaluate(each split)
       -> trainer.log_model(tracker)  [MLflow flavor, when tracking is live]
       -> post-fit diagnostics (curves, importances, SHAP)
       -> trainer.save(run_dir) + metadata + snapshot + pointers
+
+The middle three steps run one of **two protocols**, chosen by the
+family's own ``uses_val_in_fit`` flag rather than by its name (R1.10):
+
+- **standing val** (lightgbm, xgboost, torch): tune on train, fit on train
+  with val as the live referee their early stopping needs, score
+  train/val/test, select on ``selection.split``.
+- **pooled** (logreg, random_forest): a family that never reads val during
+  the fit has no reason to keep 15% of the data out of it, so tuning folds
+  over train+val, the final fit is on that pool, scores are ``dev_*``
+  (in-sample on the pool) and ``test_*``, and the selection number is a
+  k-fold CV estimate on the pool, logged as ``cv_<metric>``.
+
+Both record train/val/test membership in ``splits.json`` either way: the
+pool is built at fit time and the split is still the reproducible record.
 
     outputs/training/<timestamp>/
         <trainer's files>   whatever save() wrote, named in metadata
@@ -47,7 +62,7 @@ from ...core.timing import stage_timer
 from ...core.tracking import init_tracking
 from ...schemas import TrainingConfig
 from ..data_pipeline.classes.dataset_writer import load_manifest
-from ..evaluation_pipeline.modules.metrics import log_metrics, prefixed
+from ..evaluation_pipeline.modules.metrics import cv_scoring, log_metrics, prefixed
 from .classes import build_trainer
 from .modules.diagnostics import run_diagnostics
 from .modules.splitting import record_splits, resolve_feature_columns, split_frame
@@ -112,25 +127,24 @@ class TrainingPipeline:
             X = {name: frame[trainer.feature_columns] for name, frame in frames.items()}
             y = {name: frame[config.target] for name, frame in frames.items()}
 
-            if config.trainer.tune.enabled:
-                with stage_timer("tune", tracker):
-                    self._tune(trainer, X["train"], y["train"])
+            # Which protocol this run follows is the family's call, never the
+            # orchestrator's: each helper below asks the trainer rather than
+            # branching on its kind, so adding a family still touches nothing
+            # here.
+            X_fit, y_fit = self._fit(tracker, trainer, X, y)
 
-            with stage_timer("train", tracker):
-                trainer.train(X["train"], y["train"], X["val"], y["val"])
-
-            metrics = self._evaluate(trainer, X, y)
-            self._log_run(tracker, trainer, frames, fingerprints, metrics)
-            self._log_model(tracker, trainer, X["train"])
+            metrics = self._evaluate(tracker, trainer, X, y, X_fit, y_fit)
+            self._log_run(tracker, trainer, frames, fingerprints, metrics, len(X_fit))
+            self._log_model(tracker, trainer, X_fit)
             self._log_diagnostics(tracker, run_dir, trainer, X["val"])
 
             with stage_timer("persist", tracker):
                 files = trainer.save(run_dir)
                 self._save_metadata(
-                    run_dir, timestamp, trainer, files, fingerprints, metrics
+                    run_dir, timestamp, trainer, files, fingerprints, metrics, len(X_fit)
                 )
                 save_config_snapshot(run_dir, config.model_dump())
-            self._update_pointers(timestamp, metrics)
+            self._update_pointers(timestamp, trainer, metrics)
 
             # Artifacts last, and the log file after them: it is still being
             # written until this point.
@@ -143,21 +157,81 @@ class TrainingPipeline:
         logger.info("Training run complete: %s", run_dir)
         return run_dir
 
+    # -------------------------------------------------------------- protocol
+
+    def _fit_frames(self, trainer, X: dict, y: dict) -> tuple:
+        """The frames the search and the final fit see, per protocol.
+
+        Standing val: train only, because val has to stay outside the fit
+        to referee the early stopping inside it. Pooled: train+val
+        concatenated in split order, so a temporal run's pool is still
+        chronological and the rows keep their keys.
+        """
+        if trainer.uses_val_in_fit:
+            return X["train"], y["train"]
+        return pd.concat([X["train"], X["val"]]), pd.concat([y["train"], y["val"]])
+
+    def _fit(self, tracker, trainer, X: dict, y: dict) -> tuple:
+        """Tune (optional) then fit, both on this protocol's frames.
+
+        Returns:
+            ``(X_fit, y_fit)`` - the rows the saved model was fitted on,
+            which is what the run then reports and records.
+        """
+        X_fit, y_fit = self._fit_frames(trainer, X, y)
+        if self.config.trainer.tune.enabled:
+            with stage_timer("tune", tracker):
+                self._tune(trainer, X_fit, y_fit)
+        with stage_timer("train", tracker):
+            if trainer.uses_val_in_fit:
+                trainer.train(X_fit, y_fit, X["val"], y["val"])
+            else:
+                # No validation arguments at all: those rows are inside
+                # X_fit now, and handing them over a second time as a
+                # "validation split" is how an in-sample number ends up
+                # being read as a held-out one.
+                trainer.train(X_fit, y_fit)
+        return X_fit, y_fit
+
+    def _selection(self, trainer) -> tuple[str, str]:
+        """``(basis, metric_key)`` - what ``best.json`` means for this run.
+
+        Standing val selects on the configured split. The pooled protocol
+        has no out-of-sample split left to select on (val is in the fit),
+        so ``selection.split`` is ignored and the CV estimate decides;
+        the ``cv_`` prefix is what keeps the two kinds of number from being
+        silently ranked against each other.
+        """
+        selection = self.config.selection
+        if trainer.uses_val_in_fit:
+            return selection.split, f"{selection.split}_{selection.metric}"
+        return "cv", f"cv_{selection.metric}"
+
     # ---------------------------------------------------------------- stages
 
-    def _tune(self, trainer, X_train, y_train) -> None:
-        """Search on the training split only - val stays a clean referee."""
+    def _tune(self, trainer, X_search, y_search) -> None:
+        """Search over the protocol's frames: train, or the train+val pool.
+
+        The tuner folds over whatever it is handed, so the protocol is
+        expressed here rather than inside it.
+        """
         tune = self.config.trainer.tune
         trainer.hyperparameter_tune(
-            X_train,
-            y_train,
+            X_search,
+            y_search,
             n_trials=tune.n_trials,
             cv=tune.cv,
             metric=tune.metric,
             direction=tune.direction,
         )
 
-    def _evaluate(self, trainer, X: dict, y: dict) -> dict[str, float]:
+    def _evaluate(self, tracker, trainer, X: dict, y: dict, X_fit, y_fit) -> dict:
+        """Score the run, in whichever terms its protocol can defend."""
+        if trainer.uses_val_in_fit:
+            return self._evaluate_splits(trainer, X, y)
+        return self._evaluate_pool(tracker, trainer, X, y, X_fit, y_fit)
+
+    def _evaluate_splits(self, trainer, X: dict, y: dict) -> dict[str, float]:
         """Score every split; train included as the overfitting reference."""
         metrics: dict[str, float] = {}
         for name in ("train", "val", "test"):
@@ -166,13 +240,80 @@ class TrainingPipeline:
             metrics.update(prefixed(split_metrics, name))
         return metrics
 
-    def _log_run(self, tracker, trainer, frames, fingerprints, metrics) -> None:
+    def _evaluate_pool(self, tracker, trainer, X: dict, y: dict, X_fit, y_fit) -> dict:
+        """In-sample ``dev_*``, untouched ``test_*``, and the CV estimate.
+
+        Deliberately no ``val_*`` row: those rows are inside the fit, so a
+        metric labelled "val" would be read as held-out when it is not, and
+        the label is the whole reason anyone trusts the number. ``dev_*``
+        is the pool's in-sample score - the overfitting reference ``train_*``
+        was - and the out-of-sample number this protocol has is the CV
+        estimate below.
+        """
+        logger.info(
+            "%s does not use val during the fit: pooled protocol, so train+val "
+            "is the fit and no val_* metric is emitted",
+            trainer.model_type,
+        )
+        logger.info(
+            "selection.split=%r is ignored here; best.json reads the CV "
+            "estimate on train+val instead",
+            self.config.selection.split,
+        )
+        metrics: dict[str, float] = {}
+        scored = (("dev", X_fit, y_fit), ("test", X["test"], y["test"]))
+        for name, frame, target in scored:
+            split_metrics = trainer.evaluate(frame, target)
+            log_metrics(split_metrics, name)
+            metrics.update(prefixed(split_metrics, name))
+        with stage_timer("selection_cv", tracker):
+            metrics.update(self._cv_estimate(trainer, X_fit, y_fit))
+        return metrics
+
+    def _cv_estimate(self, trainer, X_pool, y_pool) -> dict[str, float]:
+        """The pooled protocol's selection number: k-fold CV on the pool.
+
+        A fresh pipeline per fold (the base's leak-safe path), split by the
+        run's own ``split.mode`` (D9), over the same rows the saved model
+        was fitted on - so the estimate describes the model the run ships,
+        not a different one. Fold count comes from ``trainer.tune.cv``: it
+        is the run's declared CV budget whether or not the search ran.
+
+        The std travels with the mean because a selection criterion is a
+        random variable: two runs 0.002 apart on a fold spread of 0.05 have
+        not been distinguished (Cawley & Talbot 2010).
+        """
+        selection = self.config.selection
+        folds = self.config.trainer.tune.cv
+        results = trainer.cross_validate(
+            X_pool, y_pool, cv=folds, metrics=cv_scoring(selection.metric)
+        )
+        stats = results[selection.metric]
+        logger.info(
+            "CV estimate on train+val: %s = %.4f +/- %.4f over %d folds",
+            selection.metric,
+            stats["mean"],
+            stats["std"],
+            folds,
+        )
+        return {
+            f"cv_{selection.metric}": stats["mean"],
+            f"cv_{selection.metric}_std": stats["std"],
+        }
+
+    def _log_run(self, tracker, trainer, frames, fingerprints, metrics, n_fit) -> None:
         """Params, per-iteration history, and the final metric set."""
         params = trainer.get_params()
         params.update({f"n_{name}": len(frame) for name, frame in frames.items()})
         # Fingerprints make "is this the same split as last week?" a glance.
         params.update({f"split_fp_{name}": fp for name, fp in fingerprints.items()})
         params["split_mode"] = self.config.split.mode
+        # Split sizes above are membership; this is what the final fit saw -
+        # n_train under standing val, n_train + n_val when pooled. Two params
+        # rather than a redefined n_train, so splits.json and the tracker
+        # never disagree about what "train" means.
+        params["n_fit"] = n_fit
+        params["selection_basis"] = self._selection(trainer)[0]
         params["processed_path"] = self.config.processed_path
         tracker.log_params(params)
         for record in trainer.history:
@@ -180,7 +321,7 @@ class TrainingPipeline:
             tracker.log_metrics({k: v for k, v in record.items() if k != "epoch"}, step)
         tracker.log_metrics(metrics)
 
-    def _log_model(self, tracker, trainer, X_train) -> None:
+    def _log_model(self, tracker, trainer, X_fit) -> None:
         """Log the fitted model in its own MLflow flavor, curated (D3).
 
         Autolog is deliberately not used: it dumps per-version parameter
@@ -194,7 +335,7 @@ class TrainingPipeline:
         if not tracker.live:
             return
         try:
-            trainer.log_model(tracker, X_train.head(_MODEL_EXAMPLE_ROWS))
+            trainer.log_model(tracker, X_fit.head(_MODEL_EXAMPLE_ROWS))
         except Exception as e:
             logger.warning("Model logging failed (%s); the run itself is intact", e)
 
@@ -208,6 +349,11 @@ class TrainingPipeline:
 
         Failures warn, for the same reason model logging's do: a figure that
         could not be drawn must not cost the run its artifacts.
+
+        The validation frame is the attribution sample under either protocol:
+        these figures describe how the model behaves on rows, not how well it
+        generalises, so a pooled run explaining rows it was fitted on is not
+        the same mistake as scoring them.
         """
         options = self.config.diagnostics
         if not options.enabled:
@@ -222,11 +368,13 @@ class TrainingPipeline:
     # ----------------------------------------------------------- persistence
 
     def _save_metadata(
-        self, run_dir, timestamp, trainer, files, fingerprints, metrics
+        self, run_dir, timestamp, trainer, files, fingerprints, metrics, n_fit
     ) -> None:
         """Write the reload envelope, embedding the upstream data config."""
         config = self.config
         manifest = load_manifest(config.processed_path)
+        basis, metric_key = self._selection(trainer)
+        fit_splits = ["train"] if trainer.uses_val_in_fit else ["train", "val"]
         save_metadata(
             run_dir=run_dir,
             model_type=trainer.model_type,
@@ -240,6 +388,15 @@ class TrainingPipeline:
                 "split": config.split.model_dump(),
                 "split_fingerprints": fingerprints,
                 "selection": config.selection.model_dump(),
+                # What the selection number actually is, for anyone reading
+                # this run months later: "cv" means best.json holds a k-fold
+                # estimate on train+val, not a score on a standing split.
+                "selection_basis": basis,
+                "selection_metric_key": metric_key,
+                # Which splits the final fit consumed, and how many rows -
+                # the honest counterpart to splits.json's membership.
+                "fit_splits": fit_splits,
+                "n_fit_rows": n_fit,
                 "metrics": metrics,
                 "trainer": trainer.training_summary(),
                 "git": get_git_info(),
@@ -253,18 +410,28 @@ class TrainingPipeline:
             tz=config.timezone,
         )
 
-    def _update_pointers(self, timestamp: str, metrics: dict[str, float]) -> None:
+    def _update_pointers(self, timestamp: str, trainer, metrics: dict) -> None:
         """latest.json always; best.json only on monotonic improvement."""
         selection = self.config.selection
         save_latest_pointer(self.config.output_dir, timestamp)
-        metric_key = f"{selection.split}_{selection.metric}"
-        is_best = save_best_pointer(
-            self.config.output_dir,
-            timestamp,
-            value=metrics[metric_key],
-            metric=metric_key,
-            mode=selection.mode,
-        )
+        metric_key = self._selection(trainer)[1]
+        try:
+            is_best = save_best_pointer(
+                self.config.output_dir,
+                timestamp,
+                value=metrics[metric_key],
+                metric=metric_key,
+                mode=selection.mode,
+            )
+        except ValueError as e:
+            # A pooled run's cv_* and a standing-val run's val_* estimate
+            # different things, and the pointer refuses to rank one against
+            # the other - correctly. But that refusal arrives after the fit,
+            # so it warns rather than costing the run everything it already
+            # wrote; latest.json still resolves to this run. To compare two
+            # protocols, give them separate output_dirs (or compare on test).
+            logger.warning("best.json left unchanged: %s", e)
+            return
         logger.info(
             "Pointers updated (%s=%.4f, best=%s)",
             metric_key,

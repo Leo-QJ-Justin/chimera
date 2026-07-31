@@ -91,6 +91,10 @@ class TorchTrainer(BaseTrainer):
     """
 
     kind = "torch"
+    # The epoch loop monitors val every epoch (early stopping, LR schedule,
+    # best-checkpoint choice), so val must stay outside the training data:
+    # standing-val protocol (R1.10).
+    uses_val_in_fit = True
 
     def __init__(
         self,

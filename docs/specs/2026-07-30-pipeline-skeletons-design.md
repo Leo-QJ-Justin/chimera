@@ -130,7 +130,10 @@ time series → walk-forward with temporal cutoff (never shuffled);
 final-fit doctrine (refit-on-all vs untouched holdout) chosen per project
 and recorded in the project's decision table. Ships as a small reference
 table in the skeleton docs, consumed by the writing-plans decision-table
-convention.
+convention. *(Amended by R1.10: within a project, model comparison and the
+final fit are also per **family** — a family whose fit consumes val keeps
+the standing-val protocol, one that ignores val pools train+val and
+compares on a CV estimate over the pool.)*
 
 **D10. Run artifacts (from dynamic-simu-model, hoisted to core).**
 One timestamp per run threaded everywhere; `base/<ts>/` output dirs;
@@ -373,6 +376,63 @@ absent, the step logs one line and is skipped. Kill switches:
 `plots.enabled` (evaluation). Every diagnostic is individually wrapped in
 the warn-and-continue pattern: a figure that cannot be drawn costs the run
 one log line, never the artifacts it already wrote.
+
+**R1.10 (follow-up, 2026-07-31): the tuning/final-fit protocol is
+per-family, keyed on whether the fit consumes val.** The first build gave
+every family the same protocol: tune with k-fold *inside train*, fit on
+train with val standing by, select on val. That is right only for families
+whose fit actually reads val. `logreg` and `random_forest` ignore `X_val`
+entirely, so for them the standing val split bought nothing and cost
+three things: 15% of the development data never entered the fit, the
+selection number came from a single small split (high variance), and that
+same split had already been consumed by the search — a split that tuned
+the hyperparameters cannot also certify the winner. The protocol is now
+chosen by the trainer's own `uses_val_in_fit: ClassVar[bool]`, declared in
+each concrete family's class body (`BaseTrainer` annotates it without
+defaulting it, and the contract suite requires it in the family's own
+`__dict__`, so adding a family without deciding its protocol fails loudly).
+
+| | **A: pooled** (`uses_val_in_fit = False`) | **B: standing val** (`uses_val_in_fit = True`) |
+|---|---|---|
+| Families | `logreg`, `random_forest` | `lightgbm`, `xgboost`, `torch` |
+| Tuning folds over | train+val pooled | train (torch: holdout per trial) |
+| Final fit on | train+val pooled | train, early-stopping on val |
+| Selection number | k-fold CV estimate on the pool, `cv_<metric>` | `<selection.split>_<metric>` |
+| Metrics published | `dev_*` (in-sample on the pool), `test_*`, `cv_*` | `train_*`, `val_*`, `test_*` |
+| `selection.split` | ignored (logged) | honoured |
+
+Why no `val_*` row under A: those rows are inside the fit, and a metric
+labelled "val" is read as held-out — the label is the reason anyone trusts
+the number. `dev_*` names the pool's in-sample score honestly and takes
+`train_*`'s place as the overfitting reference. Test is untouched under
+both protocols, and `splits.json` still records all three splits under
+both: the pool is assembled at fit time, so split membership remains the
+reproducible record (D8).
+
+`metadata.json`'s `training_info` records `selection_basis` (`cv` | `val`
+| `test`), `fit_splits`, and `n_fit_rows`, and the evaluation report's
+comparison names the basis in words — a delta against a CV estimate and a
+delta against a held-out split are not the same claim. `best.json`'s
+metric key carries the basis as a prefix, which means the pointer's
+existing "refusing to compare against a different metric" guard also
+refuses to rank a pooled run against a standing-val one; the training
+pipeline downgrades that to a warning so a protocol switch inside one
+`output_dir` costs a log line rather than the run's artifacts.
+
+Known limit, deliberately not solved here: when tuning is enabled, the CV
+estimate is computed with the winning hyperparameters on the pool the
+search ran over, so it is optimistically biased (Cawley & Talbot 2010 on
+selection-criterion variance; Varma & Simon 2006 on nested CV as the
+unbiased answer). Test remains the untouched estimate, and nested CV is
+the documented upgrade path rather than a default that quadruples every
+tuned run's cost.
+
+Sources: sklearn's grid-search guide (CV over the development set
+*replaces* the separate validation split; final refit on the full
+development set), Raschka 2018 *Model Evaluation, Model Selection, and
+Algorithm Selection* (three-way holdout for large data and deep learning
+where refitting is expensive and a monitor split is needed; k-fold for
+small-to-moderate data), Cawley & Talbot 2010, Varma & Simon 2006.
 
 ## Build plan (next task, via /start-task)
 

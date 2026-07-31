@@ -15,6 +15,12 @@ params:
 tune:
   # Optuna over classes/random_forest_trainer.py's own space (n_estimators,
   # max_depth, min_samples_leaf, max_features).
+  #
+  # Pooled protocol (R1.10): this family's fit never reads the validation
+  # split (uses_val_in_fit = False), so the folds below run over train+val
+  # pooled, the final model is fitted on that pool, and `cv` also sets the
+  # fold count of the CV estimate that decides best.json - whether or not
+  # the search itself is enabled. Test is never touched.
   enabled: false
   n_trials: 20
   cv: 3

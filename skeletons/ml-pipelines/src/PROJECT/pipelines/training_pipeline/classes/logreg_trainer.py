@@ -20,6 +20,10 @@ class LogisticRegressionTrainer(SklearnEstimatorTrainer):
     """Regularised linear classifier, fitted inside its preprocessing."""
 
     kind = "logreg"
+    # A one-shot sklearn fit has no in-fit stopping criterion, so it never
+    # looks at val. Its runs therefore tune and select on train+val pooled,
+    # with a k-fold CV estimate as the selection number (R1.10).
+    uses_val_in_fit = False
 
     def _build_model(self):
         if self.task != "classification":

@@ -57,14 +57,26 @@ by definition.
 stable keys and fingerprints (`core/splits.py`) — seed + protocol is the
 generator, the artifact is the record.
 
-## Evaluation protocol decision table (D9)
+## Evaluation protocol decision table (D9, amended by R1.10)
 
 | Data regime | Split | Model comparison | Final fit |
 |---|---|---|---|
-| i.i.d. tabular, ample data | stratified shuffle + untouched test | k-fold CV on train (fresh pipeline per fold) | fit on train+val, report test once |
+| i.i.d. tabular, ample data | stratified shuffle + untouched test | per family (see below): CV on train+val for a family that ignores val, the val split for one that early-stops on it | fit on train+val, report test once |
 | i.i.d. tabular, small data | stratified shuffle | nested CV (inner tune, outer estimate) | choose per project: refit-on-all vs holdout — record the choice in the decision table |
 | Time series | temporal boundary, test touched once | expanding-window walk-forward | fit through the val boundary; never train on test period |
 | Grouped/hierarchical (entities repeat) | group-aware split on entity keys | GroupKFold | fit on train groups |
+
+**Per-family protocol (R1.10).** The "model comparison" column is not one
+choice per project: it is keyed on whether a family's `train()` consumes
+the validation split, declared as `uses_val_in_fit` on each trainer class.
+Families that do (`lightgbm`, `xgboost`, `torch` — early stopping needs a
+live referee) keep val outside the fit and select on it. Families that do
+not (`logreg`, `random_forest`) tune over train+val pooled, fit the final
+model on that pool, and select on a k-fold CV estimate of it — recorded as
+`cv_<metric>` in `best.json`, with `dev_*`/`test_*` metrics and no `val_*`
+row, because a split that is inside the fit cannot be reported as held
+out. Test is untouched either way, and split membership is still recorded
+for all three splits.
 
 ## Scaffolding a project (what /design-project Phase 5 does)
 

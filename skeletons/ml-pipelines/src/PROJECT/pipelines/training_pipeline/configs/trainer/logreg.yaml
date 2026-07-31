@@ -16,6 +16,12 @@ tune:
   # Optuna over classes/logreg_trainer.py's own space (C, solver, and
   # l1_ratio where the solver allows it). Off by default: a tuned run costs
   # n_trials * cv fits.
+  #
+  # Pooled protocol (R1.10): this family's fit never reads the validation
+  # split (uses_val_in_fit = False), so the folds below run over train+val
+  # pooled, the final model is fitted on that pool, and `cv` also sets the
+  # fold count of the CV estimate that decides best.json - whether or not
+  # the search itself is enabled. Test is never touched.
   enabled: false
   n_trials: 20
   cv: 3

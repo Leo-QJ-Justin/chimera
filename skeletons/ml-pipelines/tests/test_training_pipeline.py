@@ -27,9 +27,32 @@ from PROJECT.core.run_artifacts import (
     get_best_info,
     load_metadata,
     resolve_artifact_path,
+    save_best_pointer,
 )
 from PROJECT.core.splits import load_splits
-from PROJECT.pipelines.training_pipeline import TrainingPipeline
+from PROJECT.pipelines.training_pipeline import TrainingPipeline, get_trainer_class
+from PROJECT.pipelines.training_pipeline.classes.base_trainer import BaseTrainer
+
+
+def _sidecar_metrics(run_dir) -> set[str]:
+    """Every metric key the run wrote to ``metrics.jsonl``."""
+    records = [
+        json.loads(line) for line in (run_dir / "metrics.jsonl").read_text().splitlines()
+    ]
+    return {k for r in records if r["type"] == "metrics" for k in r["metrics"]}
+
+
+def _spy_on_tuning(monkeypatch) -> dict:
+    """Record how many rows the search was handed, then run it for real."""
+    seen: dict = {}
+    original = BaseTrainer.hyperparameter_tune
+
+    def spy(self, X, y, **kwargs):
+        seen["rows"] = len(X)
+        return original(self, X, y, **kwargs)
+
+    monkeypatch.setattr(BaseTrainer, "hyperparameter_tune", spy)
+    return seen
 
 
 class TestRunArtifacts:
@@ -73,12 +96,11 @@ class TestRunArtifacts:
 
     def test_metrics_sidecar_is_written_without_mlflow(self, trained_run):
         run_dir, _ = trained_run
-        records = [
-            json.loads(line)
-            for line in (run_dir / "metrics.jsonl").read_text().splitlines()
-        ]
-        logged = {k for r in records if r["type"] == "metrics" for k in r["metrics"]}
-        assert {"val_f1_macro", "test_f1_macro"} <= logged
+        # logreg pools train+val, so its metric set is dev_/test_/cv_ (see
+        # TestProtocols); what this asserts is that the sidecar receives it
+        # with tracking off.
+        logged = _sidecar_metrics(run_dir)
+        assert {"dev_f1_macro", "test_f1_macro", "cv_f1_macro"} <= logged
 
 
 class TestSplits:
@@ -114,7 +136,34 @@ class TestPointers:
         assert resolve_artifact_path(config.output_dir) == run_dir
         best = get_best_info(config.output_dir)
         assert best["timestamp"] == run_dir.name
-        assert best["metric"] == "val_f1_macro"
+        # logreg pools train+val, so its selection number is the CV estimate.
+        assert best["metric"] == "cv_f1_macro"
+
+    def test_a_protocol_switch_warns_instead_of_losing_the_run(
+        self, tmp_path, processed_file, caplog
+    ):
+        """Two protocols in one output dir: the run survives, best.json holds.
+
+        ``save_best_pointer`` refuses to rank a ``cv_`` value against a
+        ``val_`` one - they estimate different things. That refusal arrives
+        after the fit, so it must not cost the run the artifacts it wrote.
+        """
+        import logging
+
+        config = make_training_config(tmp_path, processed_file, LOGREG_TRAINER)
+        # A standing-val run's pointer, as a booster family would have left it.
+        save_best_pointer(
+            config.output_dir, "20260101_000000", 0.9, "val_f1_macro", "max"
+        )
+        with caplog.at_level(logging.WARNING):
+            run_dir = TrainingPipeline(config).run()
+
+        assert (run_dir / "metadata.json").exists()
+        assert "best.json left unchanged" in caplog.text
+        best = get_best_info(config.output_dir)
+        assert (best["metric"], best["timestamp"]) == ("val_f1_macro", "20260101_000000")
+        # latest.json still resolves to the run that was just written.
+        assert resolve_artifact_path(config.output_dir) == run_dir
 
 
 class TestTemporalSplit:
@@ -156,7 +205,14 @@ class TestTrainerSwap:
         # Whatever this family saved is named in metadata, never guessed.
         for filename in metadata["files"].values():
             assert (run_dir / filename).exists()
-        assert get_best_info(config.output_dir)["metric"] == "val_f1_macro"
+        # best.json is written either way; which number it holds is the
+        # family's protocol, asserted in TestProtocols.
+        expected = (
+            "val_f1_macro"
+            if get_trainer_class(trainer["kind"]).uses_val_in_fit
+            else "cv_f1_macro"
+        )
+        assert get_best_info(config.output_dir)["metric"] == expected
 
     @needs_trainer("torch")
     def test_torch_history_reaches_the_metrics_sidecar(self, tmp_path, processed_file):
@@ -170,6 +226,116 @@ class TestTrainerSwap:
         # Per-epoch records carry a step; the final metric set does not.
         assert any(r.get("step") is not None for r in records if r["type"] == "metrics")
         assert load_metadata(run_dir)["training_info"]["trainer"]["history"]
+
+
+class TestProtocols:
+    """Per-family tuning/selection protocol (R1.10), asserted on both sides.
+
+    The pooled protocol is not "the sklearn families do something else": it
+    is what a family that never reads val during the fit is entitled to
+    claim. So the assertions are about the numbers a run publishes, not
+    about which class produced them.
+    """
+
+    def _run(self, tmp_path, processed_file, trainer, **overrides):
+        config = make_training_config(tmp_path, processed_file, trainer, **overrides)
+        run_dir = TrainingPipeline(config).run()
+        return run_dir, config
+
+    def _pool_size(self, run_dir) -> int:
+        splits = load_splits(run_dir)["splits"]
+        return len(splits["train"]) + len(splits["val"])
+
+    # ------------------------------------------------------------- pooled (A)
+
+    def test_a_pooled_family_fits_on_train_plus_val(self, tmp_path, processed_file):
+        run_dir, _ = self._run(tmp_path, processed_file, RANDOM_FOREST_TRAINER)
+        info = load_metadata(run_dir)["training_info"]
+
+        assert info["fit_splits"] == ["train", "val"]
+        assert info["n_fit_rows"] == self._pool_size(run_dir)
+        # The tracker sees the same number, so a run is readable without
+        # opening metadata.json.
+        params = [
+            json.loads(line)
+            for line in (run_dir / "metrics.jsonl").read_text().splitlines()
+            if json.loads(line)["type"] == "params"
+        ]
+        assert params[0]["params"]["n_fit"] == info["n_fit_rows"]
+
+    def test_a_pooled_family_publishes_no_val_metric(self, tmp_path, processed_file):
+        run_dir, _ = self._run(tmp_path, processed_file, RANDOM_FOREST_TRAINER)
+        logged = _sidecar_metrics(run_dir)
+
+        assert {"dev_accuracy", "dev_f1_macro", "test_f1_macro", "cv_f1_macro"} <= logged
+        # val rows are inside the fit; a "val" score would read as held-out.
+        assert not [k for k in logged if k.startswith("val_")]
+        # dev_ replaces train_ for the pool: one in-sample name, not two.
+        assert not [k for k in logged if k.startswith("train_")]
+
+    def test_selection_is_the_cv_estimate_on_the_pool(self, tmp_path, processed_file):
+        run_dir, config = self._run(tmp_path, processed_file, RANDOM_FOREST_TRAINER)
+        info = load_metadata(run_dir)["training_info"]
+        best = get_best_info(config.output_dir)
+
+        assert info["selection_basis"] == "cv"
+        assert best["metric"] == "cv_f1_macro"
+        assert best["value"] == info["metrics"]["cv_f1_macro"]
+        # The CV estimate is its own number, not the in-sample one relabelled.
+        assert best["value"] != info["metrics"]["dev_f1_macro"]
+        assert f"cv_{config.selection.metric}_std" in info["metrics"]
+
+    def test_pooling_does_not_change_what_splits_json_records(
+        self, tmp_path, processed_file
+    ):
+        """The pool is built at fit time; membership is still all three splits."""
+        run_dir, config = self._run(tmp_path, processed_file, RANDOM_FOREST_TRAINER)
+        payload = load_splits(run_dir)
+
+        assert set(payload["splits"]) == {"train", "val", "test"}
+        table = pd.read_parquet(config.processed_path)
+        members = [k for keys in payload["splits"].values() for k in keys]
+        assert len(members) == len(set(members)) == len(table)
+
+    def test_a_pooled_search_folds_over_the_pool(
+        self, tmp_path, processed_file, monkeypatch
+    ):
+        """The tuner is handed the pool, which is the whole point of R1.10."""
+        pytest.importorskip("optuna", reason="needs the 'tune' extra")
+        searched = _spy_on_tuning(monkeypatch)
+        trainer = {
+            **RANDOM_FOREST_TRAINER,
+            "tune": {"enabled": True, "n_trials": 2, "cv": 2},
+        }
+        run_dir, _ = self._run(tmp_path, processed_file, trainer)
+
+        assert searched["rows"] == self._pool_size(run_dir)
+
+    # ------------------------------------------------------ standing val (B)
+
+    @needs_trainer("lightgbm")
+    def test_a_standing_val_family_is_unchanged(self, tmp_path, processed_file):
+        run_dir, config = self._run(tmp_path, processed_file, LIGHTGBM_TRAINER)
+        info = load_metadata(run_dir)["training_info"]
+        logged = _sidecar_metrics(run_dir)
+
+        assert {"train_f1_macro", "val_f1_macro", "test_f1_macro"} <= logged
+        assert not [k for k in logged if k.startswith("cv_")]
+        assert info["selection_basis"] == "val"
+        assert info["fit_splits"] == ["train"]
+        assert info["n_fit_rows"] == len(load_splits(run_dir)["splits"]["train"])
+        assert get_best_info(config.output_dir)["metric"] == "val_f1_macro"
+
+    @needs_trainer("lightgbm")
+    def test_a_standing_val_search_folds_within_train(
+        self, tmp_path, processed_file, monkeypatch
+    ):
+        pytest.importorskip("optuna", reason="needs the 'tune' extra")
+        searched = _spy_on_tuning(monkeypatch)
+        trainer = {**LIGHTGBM_TRAINER, "tune": {"enabled": True, "n_trials": 2, "cv": 2}}
+        run_dir, _ = self._run(tmp_path, processed_file, trainer)
+
+        assert searched["rows"] == len(load_splits(run_dir)["splits"]["train"])
 
 
 class TestDiagnostics:

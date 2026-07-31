@@ -129,6 +129,35 @@ class TestContract:
         with pytest.raises(ValueError, match="does not match"):
             get_trainer_class(other).load(run_dir)
 
+    def test_declares_its_own_fit_protocol(self, spec):
+        """``uses_val_in_fit`` must be stated by the family itself (R1.10).
+
+        Checked in ``__dict__``, not by attribute lookup: inheriting the
+        flag from a plumbing base would let a new family be handed a
+        tuning and selection protocol nobody chose for it.
+        """
+        cls = get_trainer_class(spec["kind"])
+        assert "uses_val_in_fit" in cls.__dict__, (
+            f"{cls.__name__} must declare uses_val_in_fit in its own class "
+            "body: does its train() consume the validation split?"
+        )
+        assert isinstance(cls.uses_val_in_fit, bool)
+
+    def test_a_family_that_ignores_val_really_ignores_it(self, spec, features, xy):
+        """The flag is a promise about ``train``, so ``train`` must keep it.
+
+        Asserted in the direction that can go wrong quietly: a False flag
+        makes the pipeline pool train+val, so a family that secretly used
+        val during the fit would be reporting its own training rows as an
+        estimate of something.
+        """
+        if get_trainer_class(spec["kind"]).uses_val_in_fit:
+            pytest.skip("standing-val family: val is meant to change the fit")
+        X_train, y_train, X_val, y_val = xy
+        with_val = _build(spec, features).train(X_train, y_train, X_val, y_val)
+        without_val = _build(spec, features).train(X_train, y_train)
+        assert with_val.predict(X_val).tolist() == without_val.predict(X_val).tolist()
+
     def test_registry_resolves_the_saved_model_type(self, spec, features):
         trainer = _build(spec, features)
         # model_type IS the family key: one string names class, config and run.
@@ -432,6 +461,26 @@ def test_every_registered_kind_has_a_config_group_file():
         if line.startswith("kind:")
     }
     assert declared == set(TRAINERS)
+
+
+def test_the_plumbing_bases_decide_no_protocol():
+    """Only a family may answer "does my fit use val?" - never a base class.
+
+    ``BaseTrainer`` annotates the flag without defaulting it, and the two
+    shared-plumbing classes stay silent, so a new trainer that forgets it
+    fails ``test_declares_its_own_fit_protocol`` instead of inheriting a
+    protocol by accident.
+    """
+    from PROJECT.pipelines.training_pipeline.classes.base_trainer import BaseTrainer
+    from PROJECT.pipelines.training_pipeline.classes.sklearn_common import (
+        PipelineArtifactTrainer,
+        SklearnEstimatorTrainer,
+    )
+
+    for cls in (BaseTrainer, PipelineArtifactTrainer, SklearnEstimatorTrainer):
+        assert "uses_val_in_fit" not in cls.__dict__
+    with pytest.raises(AttributeError):
+        BaseTrainer.uses_val_in_fit
 
 
 def test_the_contract_suite_covers_every_registered_family():

@@ -16,7 +16,8 @@ Four decisions the rest of the file assumes:
 - **Validation data is in ``train``'s signature**, not out-of-band state,
   because three shipped trainers need it during the fit (LightGBM and
   XGBoost early stopping, torch's per-epoch monitor). A trainer with no
-  use for it ignores it.
+  use for it ignores it - and says so through ``uses_val_in_fit``, which
+  is what picks the run's tuning and selection protocol (R1.10).
 - **``predict_proba`` may return None.** The inference pipeline degrades to
   hard predictions rather than making every family fake probabilities.
 - **One artifact, named in metadata.** ``save`` returns the
@@ -86,6 +87,10 @@ class BaseTrainer(ABC):
             metadata - one name for one family.
         scale_numeric: Whether this family's preprocessing standardises
             numerics. Trees set it False; splits are scale-invariant.
+        uses_val_in_fit: Whether ``train`` consumes the validation split.
+            The training pipeline reads it to pick the protocol (R1.10):
+            True keeps val a standing referee outside the fit, False pools
+            train+val and selects on a k-fold CV estimate.
         best_params: Set by :meth:`hyperparameter_tune`; folded into
             ``params`` so the next ``train`` uses them.
         history: Per-iteration records for trainers that have iterations.
@@ -93,6 +98,12 @@ class BaseTrainer(ABC):
 
     kind: ClassVar[str] = ""
     scale_numeric: ClassVar[bool] = True
+    # Annotated, never defaulted: whether a family's fit consumes val decides
+    # which tuning and selection protocol its runs follow, and a default here
+    # would answer that question for a new family before anyone asked it.
+    # Every concrete trainer states its own (tests/test_trainers.py enforces
+    # that it is declared in the family's own class body).
+    uses_val_in_fit: ClassVar[bool]
 
     def __init__(
         self,
@@ -207,7 +218,11 @@ class BaseTrainer(ABC):
         return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
 
     def cross_validate(
-        self, X: pd.DataFrame, y, cv: int | Any = 5, metrics: list[str] | None = None
+        self,
+        X: pd.DataFrame,
+        y,
+        cv: int | Any = 5,
+        metrics: list[str] | dict[str, Any] | None = None,
     ) -> dict[str, dict[str, float]]:
         """Cross-validate a **fresh** model per fold.
 
@@ -216,7 +231,11 @@ class BaseTrainer(ABC):
             y: Target.
             cv: Fold count (the splitter then follows ``cv_mode``, per D9)
                 or an explicit sklearn splitter.
-            metrics: sklearn *scoring* strings; None -> the task defaults.
+            metrics: sklearn *scoring* strings, or a ``{name: scorer}``
+                mapping (what
+                ``evaluation_pipeline.modules.metrics.cv_scoring`` builds,
+                so a project alias with no sklearn scoring string still
+                means one thing). None -> the task defaults.
 
         Returns:
             ``{scoring_name: {"mean": ..., "std": ...}}``.

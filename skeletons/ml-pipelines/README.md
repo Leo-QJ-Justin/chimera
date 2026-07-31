@@ -72,7 +72,7 @@ model-input table
   → split (recorded by key + fingerprint)
   → build_trainer(cfg.trainer)
   → [optional] trainer.hyperparameter_tune(...)
-  → trainer.train(train, val)
+  → trainer.train(...)
   → trainer.evaluate(each split)
   → post-fit diagnostics (curves, importances, SHAP)
   → trainer.save(run_dir) + metadata + snapshot + pointers
@@ -80,6 +80,35 @@ model-input table
 
 There is no `if trainer.kind == ...` anywhere in `pipeline.py`, and adding
 a model family never touches it.
+
+#### Two protocols, chosen by the family — not by the orchestrator
+
+The middle three steps run one of two protocols, selected from the
+trainer's own `uses_val_in_fit` flag:
+
+| | **pooled** (`uses_val_in_fit = False`) | **standing val** (`uses_val_in_fit = True`) |
+|---|---|---|
+| Families | `logreg`, `random_forest` | `lightgbm`, `xgboost`, `torch` |
+| Tuning folds over | train+val pooled | train (torch: a holdout per trial) |
+| Final fit | train+val pooled, no val argument | train, early-stopping on val |
+| `best.json` records | `cv_<metric>` — a k-fold estimate on the pool | `<selection.split>_<metric>` |
+| Metrics published | `dev_*`, `test_*`, `cv_*` | `train_*`, `val_*`, `test_*` |
+
+A family that never reads val during the fit has no reason to keep 15% of
+the development data out of it — and the val score it would report is not
+held out anyway once the search has already consumed that split. So it
+pools, and its selection number is an honest k-fold estimate over the pool
+(`trainer.tune.cv` folds, fresh pipeline per fold, `split.mode`'s splitter)
+rather than one small split's score. A family whose early stopping needs a
+live referee keeps val outside the fit, exactly as before. There is no
+`val_*` metric under the pooled protocol on purpose: those rows are inside
+the fit, and a metric labelled "val" gets read as held out.
+
+Test is untouched under both, `splits.json` records all three splits under
+both, and `metadata.json`'s `training_info` says which protocol ran
+(`selection_basis`, `fit_splits`, `n_fit_rows`). `selection.split` applies
+only to the standing-val protocol; a pooled run logs one line saying it was
+ignored. Rationale and sources: R1.10 in the design spec.
 
 ### Inference: metadata-first, trainer-agnostic
 
@@ -101,7 +130,9 @@ different runs and need not share an order), then writes:
   bug, or a genuinely hard region), or rows ranked by `|error|` for
   regression, with `drill_down_columns` carried so a bad row can be read
   without a second join;
-- a comparison against the metric `best.json` recorded at training time;
+- a comparison against the metric `best.json` recorded at training time,
+  labelled with what that number *was* (a validation split, or a k-fold
+  estimate on train+val) — the delta is only readable once you know;
 - the figures below, linked from `report.md` as relative image links.
 
 ## Diagnostic artifacts
@@ -168,6 +199,7 @@ hooks and two methods; the base gives them three services for free.
 | `_build_model()` | subclass | A **fresh**, seeded, unfitted estimator. Called per train, per CV fold, per tuning trial — a shared object is what makes cross-validation dishonest. |
 | `_get_param_space(trial)` | subclass | That family's own Optuna space, in the estimator's own parameter names. |
 | `train(X, y, X_val, y_val)` | subclass | Validation data is in the *signature* because three of the five trainers need it during the fit. |
+| `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It picks the run's protocol (above), so the base annotates it without defaulting it and every family states its own — a new trainer that omits it fails the contract suite rather than inheriting a protocol nobody chose. |
 | `predict` / `predict_proba` | subclass / optional | `predict_proba` returns None when the family has none, rather than faking probabilities. |
 | `evaluate(X, y, metrics=…)` | **base** | So no family scores itself with its own metric definition. |
 | `cross_validate(X, y, cv, metrics)` | **base** | Fresh model per fold; the splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
@@ -331,6 +363,11 @@ verdict in the project's design doc, not in a comment):
   for CV; time series → temporal boundaries and `TimeSeriesSplit`, never
   shuffled; grouped entities → `GroupKFold`. Set `split.mode`; it drives
   both the holdout split and the CV splitter used by tuning.
-- **Final-fit doctrine.** Refit on train+val before serving, or keep the
-  untouched holdout. The scaffold ships the second (test is scored, never
-  trained on); `selection.split: val` keeps `best.json` honest.
+- **Final-fit doctrine.** Test is never trained on, under either protocol —
+  what is left to decide is what happens to *val*, and the scaffold already
+  answers that per family (`uses_val_in_fit`): a family that early-stops on
+  val keeps it out of the fit and selects on it; one that ignores it pools
+  train+val and selects on a CV estimate. Record a project-level override
+  only if you want a family to depart from that — e.g. keeping a booster's
+  val split out of the final fit permanently, or pooling for a family the
+  scaffold does not ship.

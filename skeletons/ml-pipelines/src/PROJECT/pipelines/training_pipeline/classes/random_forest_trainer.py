@@ -20,6 +20,10 @@ class RandomForestTrainer(SklearnEstimatorTrainer):
     # Splits are scale-invariant, so scaling would cost a transform and blur
     # the feature values in any importance plot drawn from the artifact.
     scale_numeric = False
+    # Bagged trees stop when the forest is grown, not when a validation curve
+    # turns, so the fit never reads val. Its runs pool train+val and select on
+    # a k-fold CV estimate (R1.10).
+    uses_val_in_fit = False
 
     def _build_model(self):
         forest = (

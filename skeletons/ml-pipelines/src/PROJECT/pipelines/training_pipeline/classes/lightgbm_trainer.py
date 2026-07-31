@@ -53,6 +53,9 @@ class LightGBMTrainer(PipelineArtifactTrainer):
 
     kind = "lightgbm"
     scale_numeric = False
+    # Early stopping reads the validation curve during the fit, so val must
+    # stay outside the training data: standing-val protocol (R1.10).
+    uses_val_in_fit = True
 
     def __init__(
         self,

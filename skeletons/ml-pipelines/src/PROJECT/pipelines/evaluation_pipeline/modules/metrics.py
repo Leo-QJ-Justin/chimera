@@ -25,6 +25,7 @@ from sklearn.metrics import (
     accuracy_score,
     classification_report,
     f1_score,
+    make_scorer,
     mean_absolute_error,
     mean_squared_error,
     r2_score,
@@ -101,6 +102,34 @@ def compute_metrics(
         name, function = resolve_metric(metric)
         results[name] = float(function(y_true, y_pred))
     return results
+
+
+def cv_scoring(metric: str | Callable) -> dict[str, Callable]:
+    """One project metric as a sklearn scoring mapping, for cross-validation.
+
+    ``cross_validate`` scores through sklearn's scorer protocol rather than
+    through :func:`compute_metrics`, so a project alias has to be *wrapped*
+    rather than named. Naming it would be wrong twice: ``"rmse"`` is not a
+    sklearn scoring string at all (it is ``neg_root_mean_squared_error``),
+    and reaching for sklearn's own string would re-decide what the alias
+    means - which is precisely what this module exists to prevent. A CV
+    estimate that decides ``best.json`` has to be the same measurement the
+    evaluation report prints.
+
+    Args:
+        metric: A project metric name (or callable), as ``selection.metric``.
+
+    Returns:
+        ``{name: scorer}``, ready to pass as ``cross_validate``'s ``metrics``.
+
+    Note:
+        ``greater_is_better=True`` is not a claim about the metric; it only
+        tells ``make_scorer`` to leave the sign alone, so the fold mean *is*
+        the metric and ``selection.mode`` stays the one place direction is
+        declared.
+    """
+    name, function = resolve_metric(metric)
+    return {name: make_scorer(function, greater_is_better=True)}
 
 
 def per_class_table(y_true, y_pred) -> pd.DataFrame:

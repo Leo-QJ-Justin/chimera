@@ -56,6 +56,14 @@ split:
 selection:
   # Drives best.json. Validation - not test - decides which run is "best";
   # test stays a reporting number.
+  #
+  # `split` applies to families whose fit consumes val (lightgbm, xgboost,
+  # torch: their early stopping needs it as a standing referee). Families
+  # that ignore val during the fit (logreg, random_forest) instead pool
+  # train+val, fit on the pool, and select on a k-fold CV estimate over it -
+  # so `split` is ignored for them (with a log line) and best.json records
+  # `cv_<metric>`. See R1.10 in the design spec; the flag is each trainer
+  # class's own `uses_val_in_fit`.
   metric: f1_macro
   mode: max
   split: val

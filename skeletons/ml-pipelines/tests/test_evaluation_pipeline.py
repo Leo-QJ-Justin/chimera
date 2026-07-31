@@ -10,9 +10,14 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.dummy import DummyRegressor
 
 from conftest import TEST_KEY_COLS, TEST_TARGET
 from PROJECT.pipelines.evaluation_pipeline import EvaluationPipeline
+from PROJECT.pipelines.evaluation_pipeline.modules.metrics import (
+    compute_metrics,
+    cv_scoring,
+)
 from PROJECT.pipelines.evaluation_pipeline.modules.triage import (
     predicted_confidence,
     worst_cases,
@@ -79,7 +84,11 @@ class TestReport:
         report = _report(config)
 
         comparison = report["comparison"]
-        assert comparison["best_metric"] == "val_f1_macro"
+        # The training run behind this fixture is logreg, which pools
+        # train+val - so the recorded number is a CV estimate, and the
+        # report says so rather than implying a like-for-like delta.
+        assert comparison["best_metric"] == "cv_f1_macro"
+        assert comparison["best_basis"] == "k-fold CV estimate on train+val"
         assert comparison["delta"] == pytest.approx(
             comparison["evaluation_value"] - comparison["best_value"]
         )
@@ -307,3 +316,27 @@ class TestTriage:
     def test_confidence_is_nan_without_probability_columns(self):
         frame = pd.DataFrame({"prediction": [0, 1]})
         assert predicted_confidence(frame, "prediction").isna().all()
+
+
+class TestCvScoring:
+    """The scorer a pooled training run selects on (R1.10)."""
+
+    @pytest.mark.parametrize("metric", ["f1_macro", "accuracy", "rmse", "mae", "r2"])
+    def test_every_selection_metric_can_be_scored_by_cross_validation(self, metric):
+        """Including the ones with no sklearn scoring string of that name.
+
+        ``rmse`` and ``mae`` are project aliases; sklearn calls them
+        ``neg_root_mean_squared_error`` / ``neg_mean_absolute_error``. A
+        pooled run has to be able to select on them, and on the project's
+        scale - not sklearn's sign convention.
+        """
+        scoring = cv_scoring(metric)
+        assert set(scoring) == {metric}
+
+        estimator = DummyRegressor(strategy="constant", constant=1.0)
+        X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+        y = pd.Series([1.0, 1.0, 1.0, 0.0])
+        estimator.fit(X, y)
+        scored = scoring[metric](estimator, X, y)
+        expected = compute_metrics(y, estimator.predict(X), metrics=[metric])[metric]
+        assert scored == pytest.approx(expected)

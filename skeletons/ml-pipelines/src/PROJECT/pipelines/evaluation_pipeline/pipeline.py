@@ -219,8 +219,10 @@ class EvaluationPipeline:
 
         A large gap usually means the two numbers are not measuring the
         same thing - typically this run scored the full model-input table while
-        ``best.json`` recorded a validation split. Worth knowing before
-        anyone quotes either number.
+        ``best.json`` recorded a validation split, or a k-fold estimate on
+        train+val for a family that pools them (R1.10). The basis travels
+        with the comparison for exactly that reason: the delta is only
+        readable once you know what the training number was.
         """
         config = self.config
         if not config.compare_to_best:
@@ -238,10 +240,12 @@ class EvaluationPipeline:
             )
             return None
         delta = value - best["value"]
+        basis = _describe_basis(best["metric"])
         logger.info(
-            "Training recorded %s=%.4f (run %s); this evaluation: %.4f (delta %+.4f)",
+            "Training recorded %s=%.4f (%s, run %s); this evaluation: %.4f (delta %+.4f)",
             best["metric"],
             best["value"],
+            basis,
             best["timestamp"],
             value,
             delta,
@@ -249,6 +253,7 @@ class EvaluationPipeline:
         return {
             "best_run": best["timestamp"],
             "best_metric": best["metric"],
+            "best_basis": basis,
             "best_value": best["value"],
             "evaluation_metric": config.selection_metric,
             "evaluation_value": value,
@@ -311,6 +316,21 @@ class EvaluationPipeline:
             ]
         lines.append("")
         return "\n".join(lines)
+
+
+def _describe_basis(best_metric: str) -> str:
+    """What kind of number ``best.json`` holds, from its metric key.
+
+    The training pipeline prefixes the key with the basis it selected on
+    (``val_``, ``test_``, or ``cv_`` for the pooled protocol), so the
+    report can say "that was a CV estimate" without loading the run.
+    """
+    prefix = best_metric.split("_", 1)[0]
+    return {
+        "cv": "k-fold CV estimate on train+val",
+        "val": "the validation split",
+        "test": "the test split",
+    }.get(prefix, "an unrecognised basis")
 
 
 def _read(path: str | Path) -> pd.DataFrame:
