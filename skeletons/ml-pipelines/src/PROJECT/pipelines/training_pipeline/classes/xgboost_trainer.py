@@ -14,6 +14,7 @@ import logging
 
 import pandas as pd
 
+from ..modules.history import booster_history
 from ..modules.model_logging import log_flavor_model
 from .sklearn_common import PipelineArtifactTrainer
 
@@ -110,6 +111,12 @@ class XGBoostTrainer(PipelineArtifactTrainer):
         # None until a stopping round actually fires, so it doubles as the
         # record of whether early stopping engaged.
         self.best_iteration = getattr(booster, "best_iteration", None)
+        # Capture only: the orchestrator replays history into the tracker, so
+        # the trainer stays free of tracking and plotting code. Guarded on the
+        # eval set because there is nothing recorded without one.
+        self.history = (
+            booster_history(booster.evals_result()) if fit_kwargs.get("eval_set") else []
+        )
         self.assemble(preprocessor, booster)
         logger.info(
             "Trained %s on %d rows (best_iteration=%s of %s)",

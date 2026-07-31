@@ -7,6 +7,7 @@ what a predictions file looks like.
 
 import json
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -17,6 +18,7 @@ from PROJECT.pipelines.evaluation_pipeline.modules.triage import (
     worst_cases,
 )
 from PROJECT.pipelines.inference_pipeline import InferencePipeline
+from PROJECT.schemas import EvaluationConfig
 
 
 def _report(config) -> dict:
@@ -50,7 +52,10 @@ class TestReport:
         config = evaluation_config_factory(path, training_config)
         report = _report(config)
 
-        assert set(report["metrics"]) == {"accuracy", "f1_macro"}
+        # The curve areas join the metric set rather than living in a second
+        # one: report.json, the sidecar and MLflow must agree on what this
+        # evaluation measured.
+        assert set(report["metrics"]) == {"accuracy", "f1_macro", "roc_auc", "pr_auc"}
         assert 0.0 <= report["metrics"]["f1_macro"] <= 1.0
         assert (
             report["error_summary"]["n_rows"]
@@ -87,6 +92,130 @@ class TestReport:
         config = evaluation_config_factory(path, training_config)
         report = _report(config)
         assert "comparison" not in report
+
+
+class TestPlots:
+    """Prediction-based figures: what each input supports, and the switch."""
+
+    def test_classification_gets_a_confusion_matrix_and_curves(
+        self, predictions, evaluation_config_factory
+    ):
+        path, training_config = predictions
+        config = evaluation_config_factory(path, training_config)
+        run_dir = EvaluationPipeline(config).run()
+
+        names = {p.name for p in (run_dir / "plots").iterdir()}
+        assert {
+            "confusion_matrix.png",
+            "roc_curves.png",
+            "pr_curves.png",
+            "calibration_curve.png",
+        } <= names
+
+    def test_curve_areas_join_the_reported_metrics(
+        self, predictions, evaluation_config_factory
+    ):
+        path, training_config = predictions
+        config = evaluation_config_factory(path, training_config)
+        report = _report(config)
+        assert 0.0 <= report["metrics"]["roc_auc"] <= 1.0
+        assert 0.0 <= report["metrics"]["pr_auc"] <= 1.0
+
+    def test_the_markdown_report_links_the_images_it_wrote(
+        self, predictions, evaluation_config_factory
+    ):
+        path, training_config = predictions
+        config = evaluation_config_factory(path, training_config)
+        run_dir = EvaluationPipeline(config).run()
+
+        text = (run_dir / "report.md").read_text()
+        assert "## Plots" in text
+        assert "![confusion_matrix](plots/confusion_matrix.png)" in text
+        # Links are relative to the report, so they resolve in the run dir
+        # and in the MLflow artifact browser alike.
+        for link in json.loads((run_dir / "report.json").read_text())["plots"]:
+            assert (run_dir / link).exists()
+
+    def test_without_probability_columns_only_the_matrix_is_drawn(
+        self, predictions, evaluation_config_factory, tmp_path
+    ):
+        """The include_probabilities=false path, and it must say so."""
+        path, training_config = predictions
+        frame = pd.read_parquet(path)
+        frame = frame.drop(columns=[c for c in frame.columns if c.startswith("proba_")])
+        rewritten = tmp_path / "no_proba.parquet"
+        frame.to_parquet(rewritten, index=False)
+
+        config = evaluation_config_factory(rewritten, training_config)
+        run_dir = EvaluationPipeline(config).run()
+
+        names = {p.name for p in (run_dir / "plots").iterdir()}
+        assert names == {"confusion_matrix.png"}
+        report = json.loads((run_dir / "report.json").read_text())
+        assert "roc_auc" not in report["metrics"]
+
+    def test_regression_gets_residuals(self, tmp_path, evaluation_config_factory):
+        frame = pd.DataFrame(
+            {
+                "entity_id": [f"e{i}" for i in range(30)],
+                "date": pd.date_range("2024-01-01", periods=30),
+                "target": np.linspace(0.0, 10.0, 30),
+                "prediction": np.linspace(0.2, 9.5, 30),
+            }
+        )
+        truth = tmp_path / "truth.parquet"
+        preds = tmp_path / "regression_preds.parquet"
+        frame.to_parquet(truth, index=False)
+        frame.drop(columns=["target"]).to_parquet(preds, index=False)
+
+        config = EvaluationConfig(
+            predictions_path=str(preds),
+            processed_path=str(truth),
+            output_dir=str(tmp_path / "outputs" / "regression_evaluation"),
+            task="regression",
+            target=TEST_TARGET,
+            key_cols=TEST_KEY_COLS,
+            selection_metric="rmse",
+            compare_to_best=False,
+            mlflow={"enabled": False},
+        )
+        run_dir = EvaluationPipeline(config).run()
+        assert (run_dir / "plots" / "residuals.png").exists()
+        assert "![residuals](plots/residuals.png)" in (run_dir / "report.md").read_text()
+
+    def test_the_kill_switch_writes_no_plots_and_no_section(
+        self, predictions, evaluation_config_factory
+    ):
+        path, training_config = predictions
+        config = evaluation_config_factory(
+            path, training_config, plots={"enabled": False}
+        )
+        run_dir = EvaluationPipeline(config).run()
+
+        assert not (run_dir / "plots").exists()
+        assert "## Plots" not in (run_dir / "report.md").read_text()
+        report = json.loads((run_dir / "report.json").read_text())
+        assert "plots" not in report
+        assert "roc_auc" not in report["metrics"]
+
+    def test_a_failing_plot_costs_the_report_nothing_else(
+        self, predictions, evaluation_config_factory, monkeypatch
+    ):
+        from PROJECT.pipelines.evaluation_pipeline.modules import diagnostics
+
+        def explode(*args, **kwargs):
+            raise RuntimeError("plot exploded")
+
+        monkeypatch.setattr(diagnostics, "plot_confusion_matrix", explode)
+        path, training_config = predictions
+        config = evaluation_config_factory(path, training_config)
+        run_dir = EvaluationPipeline(config).run()
+
+        assert (run_dir / "report.json").exists()
+        names = {p.name for p in (run_dir / "plots").iterdir()}
+        assert "confusion_matrix.png" not in names
+        # The curves are drawn by separate, separately guarded calls.
+        assert "roc_curves.png" in names
 
 
 class TestJoin:

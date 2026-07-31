@@ -54,6 +54,16 @@ class PipelineArtifactTrainer(BaseTrainer):
         """The bare fitted estimator inside the artifact."""
         return self.model.named_steps["model"]
 
+    @property
+    def preprocessor(self):
+        """The fitted preprocessor half of the artifact.
+
+        Named the same as ``TorchTrainer.preprocessor`` so post-fit
+        diagnostics can ask any family for its transformer without
+        branching on which one it got.
+        """
+        return self.model.named_steps["preprocess"]
+
     def transformed(self, X: pd.DataFrame):
         """``X`` aligned and pushed through the fitted preprocessor."""
         return self.model.named_steps["preprocess"].transform(self.align(X))

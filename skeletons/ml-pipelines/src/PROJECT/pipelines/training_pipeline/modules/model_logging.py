@@ -30,6 +30,14 @@ FLAVOR_ARG = {
     "pytorch": "pytorch_model",
 }
 
+# MLflow >= 3.15 defaults sklearn serialisation to skops, which refuses a
+# pipeline whose transformers reference types outside its allow-list (a bare
+# ColumnTransformer already trips it). Cloudpickle is the long-standing
+# format every supported MLflow version reads and writes.
+FLAVOR_KWARGS = {
+    "sklearn": {"serialization_format": "cloudpickle"},
+}
+
 
 def log_flavor_model(
     tracker, flavor: str, model, *, input_example=None, predictions=None
@@ -60,6 +68,7 @@ def log_flavor_model(
             path = Path(scratch) / "model"
             module.save_model(
                 **{FLAVOR_ARG[flavor]: model},
+                **FLAVOR_KWARGS.get(flavor, {}),
                 path=str(path),
                 signature=infer_signature(input_example, predictions),
                 input_example=input_example,

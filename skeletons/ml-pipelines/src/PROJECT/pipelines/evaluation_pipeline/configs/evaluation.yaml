@@ -37,6 +37,14 @@ triage:
   # without a second join. Empty -> keys, truth, prediction only.
   drill_down_columns: []
 
+# Figures written to <run_dir>/plots/ and linked from report.md. The
+# confusion matrix (classification) and residuals (regression) need only
+# hard predictions; ROC, precision-recall and calibration additionally need
+# the proba_* columns inference writes when include_probabilities is on -
+# without them those three are skipped with a log line saying so.
+plots:
+  enabled: true
+
 # Compare this evaluation's headline metric against the value best.json
 # recorded at training time. A large gap usually means the two numbers are
 # not measuring the same thing - worth knowing before anyone quotes either.

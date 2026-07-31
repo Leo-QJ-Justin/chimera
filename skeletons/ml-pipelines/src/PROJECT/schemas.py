@@ -277,6 +277,38 @@ class SelectionConfig(BaseModel):
     split: Literal["val", "test"] = "val"
 
 
+class ShapConfig(BaseModel):
+    """SHAP attributions over a sample of the validation design matrix.
+
+    Sampled rather than exhaustive: an exact explainer is superlinear in
+    rows, and the beeswarm of 200 rows says what the beeswarm of 20,000
+    says. Needs the optional ``explain`` extra; without it the step logs
+    one line and is skipped.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    enabled: bool = True
+    sample_size: int = Field(default=200, ge=1)
+    max_display: int = Field(default=20, ge=1)
+
+
+class DiagnosticsConfig(BaseModel):
+    """Post-fit figures drawn from the fitted model itself.
+
+    Model-based, which is why they belong to the training pipeline:
+    curves come from the family's own per-iteration history, importances
+    and SHAP from the estimator's internals. Prediction-based figures
+    (confusion matrix, ROC, calibration, residuals) belong to the
+    evaluation pipeline, which is where the predictions are.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    enabled: bool = True
+    shap: ShapConfig = ShapConfig()
+
+
 class TrainingConfig(RunConfig):
     """processed -> split -> trainer.fit -> trainer.evaluate -> run directory."""
 
@@ -292,6 +324,7 @@ class TrainingConfig(RunConfig):
     trainer: TrainerConfig = TrainerConfig()
     split: TrainingSplitConfig = TrainingSplitConfig()
     selection: SelectionConfig = SelectionConfig()
+    diagnostics: DiagnosticsConfig = DiagnosticsConfig()
     logging: ProjectLoggingConfig = ProjectLoggingConfig()
     mlflow: MlflowConfig = MlflowConfig()
 
@@ -405,6 +438,21 @@ class TriageConfig(BaseModel):
     drill_down_columns: list[str] = []
 
 
+class PlotsConfig(BaseModel):
+    """Prediction-based figures for the evaluation report.
+
+    Drawn from the predictions table alone (no model, no features), which
+    is what keeps them on this side of the D4 boundary. ROC, PR and
+    calibration additionally need the ``proba_*`` columns inference writes
+    when ``include_probabilities`` is on; without them the confusion
+    matrix is still drawn and a log line says why the rest were not.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    enabled: bool = True
+
+
 class EvaluationConfig(RunConfig):
     """predictions + ground truth -> metrics report + error triage.
 
@@ -423,6 +471,7 @@ class EvaluationConfig(RunConfig):
     prediction_col: str = "prediction"
     key_cols: list[str] = ["entity_id", "date"]
     triage: TriageConfig = TriageConfig()
+    plots: PlotsConfig = PlotsConfig()
     compare_to_best: bool = True
     runs_dir: str = "outputs/training"
     selection_metric: str = "f1_macro"

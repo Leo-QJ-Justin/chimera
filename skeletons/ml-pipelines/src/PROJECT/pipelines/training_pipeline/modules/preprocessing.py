@@ -65,3 +65,43 @@ def build_preprocessor(
     )
     preprocessor.set_output(transform="pandas")
     return preprocessor
+
+
+def transformed_feature_names(
+    preprocessor, input_cols: list[str], n_features: int | None = None
+) -> list[str]:
+    """Names for the *design matrix* columns, not the input columns.
+
+    One-hot encoding makes those two different lists, which is the whole
+    reason this exists: an importance vector is indexed by the transformed
+    width, so labelling it with the raw feature list silently mislabels
+    every bar after the first categorical.
+
+    Degrades rather than raises, in both directions - a diagnostic must not
+    be able to fail a run:
+
+    Args:
+        preprocessor: A **fitted** transformer, ideally one exposing
+            ``get_feature_names_out()``.
+        input_cols: Fallback names for a transformer that does not.
+        n_features: Expected width. When given and the resolved names do
+            not match it, generic ``f0..fN`` names are used instead - an
+            honest "unknown" beats a confidently wrong label.
+
+    Returns:
+        One name per design-matrix column.
+    """
+    try:
+        names = [str(name) for name in preprocessor.get_feature_names_out()]
+    except Exception as e:
+        logger.debug("get_feature_names_out unavailable (%s); using input columns", e)
+        names = [str(c) for c in input_cols]
+    if n_features is not None and len(names) != n_features:
+        logger.warning(
+            "Resolved %d feature name(s) for a %d-column design matrix; falling "
+            "back to positional names",
+            len(names),
+            n_features,
+        )
+        return [f"f{i}" for i in range(n_features)]
+    return names

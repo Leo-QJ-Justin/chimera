@@ -13,6 +13,7 @@ family never touches it.
       -> trainer.train(train, val)
       -> trainer.evaluate(each split)
       -> trainer.log_model(tracker)  [MLflow flavor, when tracking is live]
+      -> post-fit diagnostics (curves, importances, SHAP)
       -> trainer.save(run_dir) + metadata + snapshot + pointers
 
     outputs/training/<timestamp>/
@@ -21,6 +22,7 @@ family never touches it.
         metadata.json       the reload envelope (feature order, files, upstream)
         config.yaml         the post-compose config that actually ran
         metrics.jsonl       structured metric sidecar (works with MLflow off)
+        plots/              post-fit diagnostic figures (see modules/diagnostics.py)
 
 plus ``latest.json`` / ``best.json`` pointers at ``outputs/training/``,
 which are the only supported way to find a run (D10).
@@ -47,6 +49,7 @@ from ...schemas import TrainingConfig
 from ..data_pipeline.classes.dataset_writer import load_manifest
 from ..evaluation_pipeline.modules.metrics import log_metrics, prefixed
 from .classes import build_trainer
+from .modules.diagnostics import run_diagnostics
 from .modules.splitting import record_splits, resolve_feature_columns, split_frame
 
 logger = logging.getLogger(__name__)
@@ -119,6 +122,7 @@ class TrainingPipeline:
             metrics = self._evaluate(trainer, X, y)
             self._log_run(tracker, trainer, frames, fingerprints, metrics)
             self._log_model(tracker, trainer, X["train"])
+            self._log_diagnostics(tracker, run_dir, trainer, X["val"])
 
             with stage_timer("persist", tracker):
                 files = trainer.save(run_dir)
@@ -193,6 +197,27 @@ class TrainingPipeline:
             trainer.log_model(tracker, X_train.head(_MODEL_EXAMPLE_ROWS))
         except Exception as e:
             logger.warning("Model logging failed (%s); the run itself is intact", e)
+
+    def _log_diagnostics(self, tracker, run_dir, trainer, X_val) -> None:
+        """Post-fit figures for the model itself: curves, importances, SHAP.
+
+        Deliberately *not* the trainer's job (it captures history, it does
+        not draw it) and deliberately before the run directory is uploaded,
+        so ``plots/`` mirrors into MLflow with the rest of the run and needs
+        no tracking code of its own.
+
+        Failures warn, for the same reason model logging's do: a figure that
+        could not be drawn must not cost the run its artifacts.
+        """
+        options = self.config.diagnostics
+        if not options.enabled:
+            logger.info("diagnostics.enabled=false; no post-fit figures written")
+            return
+        try:
+            with stage_timer("diagnostics", tracker):
+                run_diagnostics(run_dir, trainer, options, X_val)
+        except Exception as e:
+            logger.warning("Diagnostics failed (%s); the run itself is intact", e)
 
     # ----------------------------------------------------------- persistence
 

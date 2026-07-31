@@ -30,6 +30,7 @@ is another trainer class overriding :meth:`_build_model`, not a lookup key
 inside this one.
 """
 
+import copy
 import logging
 import tempfile
 from pathlib import Path
@@ -513,15 +514,18 @@ class TorchTrainer(BaseTrainer):
         ``self.model`` already carries the best-monitored weights, so this
         logs the model that will be served. Any device wrapper is unwrapped
         first - a saved ``DataParallel`` will not load on a CPU host - and
-        the example is the transformed design matrix, since the flavor
-        stores a module rather than a pipeline.
+        the module is logged as a CPU copy, because MLflow validates the
+        (CPU) input example against it at save time. The example is the
+        transformed design matrix, since the flavor stores a module rather
+        than a pipeline.
         """
         self.check_fitted()
         example = None if input_example is None else self._design_matrix(input_example)
+        served = copy.deepcopy(getattr(self.model, "module", self.model)).cpu().eval()
         log_flavor_model(
             tracker,
             "pytorch",
-            getattr(self.model, "module", self.model),
+            served,
             input_example=example,
             predictions=None if example is None else self._raw_outputs(input_example),
         )

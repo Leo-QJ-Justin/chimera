@@ -153,6 +153,31 @@ def test_logging_never_aborts_the_run(
     assert not client.list_artifacts(run.info.run_id, "model")
 
 
+def test_diagnostic_plots_reach_the_runs_artifact_store(
+    tmp_path, processed_file, backend, mlflow_config
+):
+    """Figures need no tracking call of their own to become artifacts.
+
+    They are written into the run directory, and the pipeline uploads that
+    directory wholesale - which is the whole reason ``core/plots.py`` takes
+    a path and knows nothing about the tracker.
+    """
+    _, client = backend
+    config = make_training_config(
+        tmp_path,
+        processed_file,
+        LOGREG_TRAINER,
+        mlflow=mlflow_config,
+        diagnostics={"shap": {"enabled": False}},
+    )
+    TrainingPipeline(config).run()
+
+    run = _only_run(client)
+    names = {f.path for f in client.list_artifacts(run.info.run_id, "plots")}
+    assert "plots/feature_importances.png" in names
+    assert "plots/feature_importances.csv" in names
+
+
 def _only_run(client):
     experiment = client.get_experiment_by_name("test")
     (run,) = client.search_runs([experiment.experiment_id])

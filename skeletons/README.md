@@ -26,6 +26,19 @@ membership. Model families plug in as **trainers** (`sklearn`,
 Hydra `trainer` config group — the training pipeline just builds the
 configured trainer and fits.
 
+Diagnostic figures ship with it, split by what each one needs: the
+training pipeline draws what only the fitted model can show (training
+curves from the family's own per-iteration history, feature importances or
+coefficients, and config-gated SHAP summaries), and the evaluation
+pipeline draws what the predictions table alone supports (confusion
+matrix, ROC/PR/calibration where `proba_*` columns exist, residuals for
+regression) and links them from `report.md`. Everything lands in
+`<run_dir>/plots/`, which means it mirrors to MLflow through the existing
+run-directory upload rather than through any new tracking call. Each
+figure is individually guarded — one that fails costs a log line, not the
+run. `matplotlib` is a core dependency; `shap` is the optional `explain`
+extra and skips with one line when absent.
+
 ## The contracts every pipeline honours
 
 **Data/training boundary (D5).** The data pipeline runs load → stateless

@@ -328,6 +328,52 @@ made the in-repo template non-runnable and added a botchable step. If a
 future scaffold needs shared utils, factor then — don't pre-abstract
 for a consumer that doesn't exist.
 
+**R1.9 (follow-up, 2026-07-31): diagnostic artifacts, split by what they
+need.** The first build logged numbers and models but drew no figures —
+matplotlib was not even a dependency, and LightGBM/XGBoost discarded their
+eval curves entirely. Diagnostics are now first-class, split across the two
+pipelines by their input rather than by their subject matter:
+
+| Diagnostic | Needs | Pipeline | Applies to |
+|---|---|---|---|
+| Training curves | per-iteration history | training (post-fit) | torch, lightgbm, xgboost |
+| Feature importances | `estimator.feature_importances_` | training (post-fit) | random_forest, lightgbm, xgboost |
+| Coefficients | `estimator.coef_` | training (post-fit) | logreg |
+| SHAP beeswarm / bar | model internals + a data sample | training (post-fit) | all but torch; config-gated |
+| Confusion matrix | hard predictions | evaluation | classification |
+| ROC / PR curves | `proba_*` columns | evaluation | classification |
+| Calibration | `proba_*` columns | evaluation | binary classification |
+| Residuals, predicted-vs-actual | hard predictions | evaluation | regression |
+
+The line is model-based vs prediction-based. SHAP needs the estimator, not
+its outputs, so it cannot live in the evaluation pipeline; the confusion
+matrix needs only the predictions table, so putting it in training would
+mean training scoring a sample a second time — the thing D4 exists to
+prevent. Trainers stay tracking-free and plotting-free: a booster now
+*captures* its eval record into `history` (via `record_evaluation` /
+`evals_result()`, flattened by `modules/history.py`), and the orchestrator
+replays that into MLflow step-wise exactly as it already did for torch.
+
+**Hand-rolled over `mlflow.models.evaluate`:** the evaluate API wants
+fluent global run state, and its score-based artifacts want a loadable
+model rather than a predictions table, whereas the core
+`Tracker` drives `MlflowClient` with an explicit `run_id` precisely to
+avoid fluent state — and these figures must also work with tracking off.
+Hand-rolled sklearn + matplotlib gives a curated artifact set and works
+offline. No new tracking surface was needed: both pipelines already upload
+their whole run directory, so anything written into `<run_dir>/plots/`
+mirrors to MLflow for free.
+
+**Dependencies:** `matplotlib` becomes a **core** dependency (curves are
+part of what a run is expected to produce, so they must not be what a
+missing install silently drops); `shap` is the optional `explain` extra,
+guarded with the same `_import_<lib>()` pattern the trainer families use —
+absent, the step logs one line and is skipped. Kill switches:
+`diagnostics.enabled` / `diagnostics.shap.enabled` (training),
+`plots.enabled` (evaluation). Every diagnostic is individually wrapped in
+the warn-and-continue pattern: a figure that cannot be drawn costs the run
+one log line, never the artifacts it already wrote.
+
 ## Build plan (next task, via /start-task)
 
 1. `skeletons/` in chimera: `core/` utils package first (D3, D8, D10, D11,

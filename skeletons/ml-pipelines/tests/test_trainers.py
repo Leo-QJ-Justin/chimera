@@ -246,6 +246,83 @@ class TestBoosterEarlyStopping:
         assert trainer.best_iteration < 400
 
 
+class TestBoosterHistory:
+    """A booster's eval curve must reach ``history`` in the shared shape.
+
+    The orchestrator replays ``history`` into the tracker step-wise using
+    the ``epoch`` key - so a booster that records its curve gets per-round
+    MLflow metrics and a training-curve figure with no trainer-side
+    tracking code, exactly as the torch trainer does.
+    """
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            pytest.param(
+                LIGHTGBM_TRAINER, id="lightgbm", marks=needs_trainer("lightgbm")
+            ),
+            pytest.param(XGBOOST_TRAINER, id="xgboost", marks=needs_trainer("xgboost")),
+        ],
+    )
+    def test_validation_curve_is_captured_per_iteration(self, spec, features, xy):
+        trainer = _build(spec, features).train(*xy)
+
+        assert trainer.history, "the booster recorded no eval curve"
+        first = trainer.history[0]
+        assert first["epoch"] == 0
+        assert [r["epoch"] for r in trainer.history] == list(range(len(trainer.history)))
+        val_keys = [k for k in first if k.startswith("val_")]
+        assert val_keys, f"no val_* metric in {sorted(first)}"
+        assert all(isinstance(first[k], float) for k in val_keys)
+
+    @pytest.mark.parametrize(
+        "spec",
+        [
+            pytest.param(
+                LIGHTGBM_TRAINER, id="lightgbm", marks=needs_trainer("lightgbm")
+            ),
+            pytest.param(XGBOOST_TRAINER, id="xgboost", marks=needs_trainer("xgboost")),
+        ],
+    )
+    def test_no_validation_split_records_no_history(self, spec, features, xy):
+        # Nothing to record against, and an empty history is the honest
+        # answer - the curve helpers treat it as "no curves", not an error.
+        trainer = _build(spec, features).train(xy[0], xy[1])
+        assert trainer.history == []
+
+
+class TestBoosterHistoryShape:
+    """The flattener itself, on the nested shape both boosters produce."""
+
+    def test_dataset_names_become_split_prefixes(self):
+        from PROJECT.pipelines.training_pipeline.modules.history import booster_history
+
+        history = booster_history(
+            {
+                "training": {"logloss": [0.7, 0.6]},
+                "validation_0": {"logloss": [0.8, 0.75]},
+            }
+        )
+        assert history == [
+            {"epoch": 0, "train_logloss": 0.7, "val_logloss": 0.8},
+            {"epoch": 1, "train_logloss": 0.6, "val_logloss": 0.75},
+        ]
+
+    def test_ragged_series_are_truncated_not_padded(self):
+        """A curve cut short by early stopping must not leave partial rows."""
+        from PROJECT.pipelines.training_pipeline.modules.history import booster_history
+
+        history = booster_history({"valid_0": {"a": [1.0, 2.0, 3.0], "b": [1.0, 2.0]}})
+        assert len(history) == 2
+        assert all({"epoch", "val_a", "val_b"} == set(r) for r in history)
+
+    def test_no_eval_record_is_an_empty_history(self):
+        from PROJECT.pipelines.training_pipeline.modules.history import booster_history
+
+        assert booster_history({}) == []
+        assert booster_history(None) == []
+
+
 class TestTorchOverrides:
     """The two places TorchTrainer refuses the base's sklearn machinery."""
 

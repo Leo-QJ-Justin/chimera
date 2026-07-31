@@ -30,6 +30,13 @@ mlflow:
   # test suite does, so tests stay hermetic. The <run_dir>/metrics.jsonl
   # sidecar is written either way.
   #
+  # Every file a pipeline writes into its run directory is uploaded as an
+  # MLflow artifact at the end of that run - metadata, config snapshot,
+  # split record, and the diagnostic figures under <run_dir>/plots/. So a
+  # new artifact is a file written in the right place, never a new
+  # tracking call, and the run directory on disk and the MLflow run always
+  # show the same thing.
+  #
   # There is deliberately no autolog switch. Each trainer logs its own model
   # in its own MLflow flavor after the fit (BaseTrainer.log_model), because
   # autolog dumps per-version parameter sets nobody curated, fires on every

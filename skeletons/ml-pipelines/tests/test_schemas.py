@@ -6,14 +6,18 @@ pydantic's own test suite's job and is not re-tested here.
 """
 
 import logging
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from PROJECT.schemas import (
     DataPipelineConfig,
+    DiagnosticsConfig,
     EvaluationConfig,
     InferenceConfig,
+    PlotsConfig,
+    ShapConfig,
     TorchTrainerConfig,
     TrainingConfig,
     TrainingSplitConfig,
@@ -96,6 +100,62 @@ class TestTrainingConfig:
                 selection={"metric": "rmse", "mode": "min"},
                 split={"mode": "stratified"},
             )
+
+
+class TestDiagnosticsAndPlotsConfig:
+    """The knobs, and the guard against ``extra="ignore"`` eating a typo.
+
+    Composite schemas ignore unknown sections by design (Hydra composition
+    injects sections a pipeline does not use), which means a key that is in
+    the shipped YAML but *not* in the model is dropped in silence and the
+    switch it names does nothing. These compare the two directly.
+    """
+
+    def test_diagnostics_knobs_round_trip(self):
+        config = TrainingConfig(
+            diagnostics={
+                "enabled": True,
+                "shap": {"enabled": False, "sample_size": 50, "max_display": 5},
+            }
+        )
+        assert config.diagnostics.enabled is True
+        assert config.diagnostics.shap.enabled is False
+        assert config.diagnostics.shap.sample_size == 50
+        assert config.diagnostics.shap.max_display == 5
+
+    def test_plots_knob_round_trips(self):
+        assert EvaluationConfig(plots={"enabled": False}).plots.enabled is False
+
+    def test_shipped_training_yaml_diagnostics_block_is_fully_understood(self):
+        block = _shipped("training_pipeline", "training.yaml")["diagnostics"]
+        assert set(block) == set(DiagnosticsConfig.model_fields)
+        assert set(block["shap"]) == set(ShapConfig.model_fields)
+        # And the values survive validation, not just the key names.
+        assert TrainingConfig(diagnostics=block).diagnostics.model_dump() == block
+
+    def test_shipped_evaluation_yaml_plots_block_is_fully_understood(self):
+        block = _shipped("evaluation_pipeline", "evaluation.yaml")["plots"]
+        assert set(block) == set(PlotsConfig.model_fields)
+        assert EvaluationConfig(plots=block).plots.model_dump() == block
+
+    def test_a_zero_shap_sample_is_rejected(self):
+        with pytest.raises(ValidationError, match="sample_size"):
+            TrainingConfig(diagnostics={"shap": {"sample_size": 0}})
+
+
+def _shipped(pipeline: str, filename: str) -> dict:
+    """A shipped pipeline config, read as plain YAML.
+
+    The one place tests read `configs/` rather than schema defaults: the
+    assertion *is* that the file and the schema agree, and it cannot be
+    made from either side alone.
+    """
+    import yaml
+
+    import PROJECT
+
+    path = Path(PROJECT.__file__).parent / "pipelines" / pipeline / "configs" / filename
+    return yaml.safe_load(path.read_text())
 
 
 class TestTorchTrainerConfig:

@@ -80,11 +80,27 @@ TRAINER_EXTRAS = {
 
 
 def needs(*modules: str, reason: str = ""):
-    """Skip when an optional extra is absent, exactly as the scaffold does."""
-    missing = [m for m in modules if find_spec(m) is None]
+    """Skip when an optional extra is absent, exactly as the scaffold does.
+
+    Actually imports rather than probing ``find_spec``: an installed-but-
+    unimportable extra (shap under a numpy that numba does not support yet)
+    must skip the same way an absent one does, because that is what the
+    scaffold's guarded imports do at run time.
+    """
+    missing = [m for m in modules if not _importable(m)]
     return pytest.mark.skipif(
         bool(missing), reason=f"needs {reason or 'the extra'} ({', '.join(missing)})"
     )
+
+
+def _importable(module: str) -> bool:
+    if find_spec(module) is None:
+        return False
+    try:
+        __import__(module)
+    except ImportError:
+        return False
+    return True
 
 
 def needs_trainer(kind: str):

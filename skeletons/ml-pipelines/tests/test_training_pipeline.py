@@ -13,11 +13,13 @@ import pytest
 from conftest import (
     LIGHTGBM_TRAINER,
     LOGREG_TRAINER,
+    RANDOM_FOREST_TRAINER,
     TEST_KEY_COLS,
     TEST_TARGET,
     TORCH_TRAINER,
     XGBOOST_TRAINER,
     make_training_config,
+    needs,
     needs_trainer,
     trainer_params,
 )
@@ -34,7 +36,13 @@ class TestRunArtifacts:
     def test_run_dir_is_self_describing(self, trained_run):
         run_dir, _ = trained_run
         names = {p.name for p in run_dir.iterdir()}
-        assert {"splits.json", "metadata.json", "config.yaml", "metrics.jsonl"} <= names
+        assert {
+            "splits.json",
+            "metadata.json",
+            "config.yaml",
+            "metrics.jsonl",
+            "plots",
+        } <= names
         # Whatever the trainer saved is named in metadata, never guessed.
         for filename in load_metadata(run_dir)["files"].values():
             assert (run_dir / filename).exists()
@@ -162,6 +170,154 @@ class TestTrainerSwap:
         # Per-epoch records carry a step; the final metric set does not.
         assert any(r.get("step") is not None for r in records if r["type"] == "metrics")
         assert load_metadata(run_dir)["training_info"]["trainer"]["history"]
+
+
+class TestDiagnostics:
+    """Post-fit figures: what each family can produce, and the kill switch."""
+
+    def _plots(self, tmp_path, processed_file, trainer, **overrides) -> tuple:
+        config = make_training_config(tmp_path, processed_file, trainer, **overrides)
+        run_dir = TrainingPipeline(config).run()
+        plots_dir = run_dir / "plots"
+        names = {p.name for p in plots_dir.iterdir()} if plots_dir.exists() else set()
+        return run_dir, plots_dir, names
+
+    def test_a_one_shot_fit_gets_importances_but_no_curves(
+        self, tmp_path, processed_file
+    ):
+        # Random forest has no iterations to plot and no history to draw one
+        # from, which is a skipped step rather than a failure.
+        _, plots_dir, names = self._plots(
+            tmp_path,
+            processed_file,
+            RANDOM_FOREST_TRAINER,
+            diagnostics={"shap": {"enabled": False}},
+        )
+        assert {"feature_importances.png", "feature_importances.csv"} <= names
+        assert "training_curves.png" not in names
+
+        rows = pd.read_csv(plots_dir / "feature_importances.csv")
+        assert list(rows.columns) == ["feature", "importance"]
+        # One row per *transformed* column: one-hot encoding makes that a
+        # different count from the raw feature list.
+        assert len(rows) >= 3
+        assert rows["importance"].abs().is_monotonic_decreasing
+
+    def test_coefficients_are_charted_for_a_linear_family(
+        self, tmp_path, processed_file
+    ):
+        _, _, names = self._plots(
+            tmp_path,
+            processed_file,
+            LOGREG_TRAINER,
+            diagnostics={"shap": {"enabled": False}},
+        )
+        assert "feature_importances.png" in names
+
+    @needs_trainer("torch")
+    def test_torch_gets_curves_and_no_attribution_chart(self, tmp_path, processed_file):
+        _, _, names = self._plots(tmp_path, processed_file, TORCH_TRAINER)
+        assert "training_curves.png" in names
+        # Documented skip: gradient attributions for an MLP are a different
+        # tool, not a variant of feature_importances_.
+        assert "feature_importances.png" not in names
+        assert "shap_beeswarm.png" not in names
+
+    @needs_trainer("lightgbm")
+    def test_a_booster_gets_curves_from_its_captured_eval_record(
+        self, tmp_path, processed_file
+    ):
+        run_dir, _, names = self._plots(
+            tmp_path,
+            processed_file,
+            LIGHTGBM_TRAINER,
+            diagnostics={"shap": {"enabled": False}},
+        )
+        assert {"training_curves.png", "feature_importances.png"} <= names
+
+        # The same capture also reaches the sidecar step-wise, which is what
+        # makes the curve recoverable without a tracking server.
+        records = [
+            json.loads(line)
+            for line in (run_dir / "metrics.jsonl").read_text().splitlines()
+        ]
+        stepped = [
+            r for r in records if r["type"] == "metrics" and r.get("step") is not None
+        ]
+        assert stepped, "no step-wise metric rows for a booster run"
+        assert [r["step"] for r in stepped] == list(range(len(stepped)))
+        assert all(any(k.startswith("val_") for k in r["metrics"]) for r in stepped)
+
+    def test_the_kill_switch_writes_no_plots_at_all(self, tmp_path, processed_file):
+        _, plots_dir, _ = self._plots(
+            tmp_path,
+            processed_file,
+            RANDOM_FOREST_TRAINER,
+            diagnostics={"enabled": False},
+        )
+        assert not plots_dir.exists()
+
+    def test_a_failing_diagnostic_costs_the_run_nothing_else(
+        self, tmp_path, processed_file, monkeypatch
+    ):
+        """One broken figure must not cost the run its artifacts."""
+        from PROJECT.pipelines.training_pipeline.modules import diagnostics
+
+        def explode(*args, **kwargs):
+            raise RuntimeError("plot exploded")
+
+        monkeypatch.setattr(diagnostics, "plot_feature_importances", explode)
+        run_dir, _, names = self._plots(
+            tmp_path,
+            processed_file,
+            RANDOM_FOREST_TRAINER,
+            diagnostics={"shap": {"enabled": False}},
+        )
+        assert (run_dir / "metadata.json").exists()
+        assert (run_dir / "model.joblib").exists()
+        assert "feature_importances.png" not in names
+
+    @needs("shap", reason="the 'explain' extra")
+    def test_shap_summaries_are_written_when_the_extra_is_installed(
+        self, tmp_path, processed_file
+    ):
+        _, _, names = self._plots(
+            tmp_path,
+            processed_file,
+            RANDOM_FOREST_TRAINER,
+            diagnostics={"shap": {"enabled": True, "sample_size": 30, "max_display": 5}},
+        )
+        assert {"shap_beeswarm.png", "shap_bar.png"} <= names
+
+    def test_a_missing_shap_install_logs_and_skips(
+        self, tmp_path, processed_file, monkeypatch, caplog
+    ):
+        """The optional-extra path, exercised whether or not shap is present."""
+        import logging
+
+        from PROJECT.pipelines.training_pipeline.modules import diagnostics
+
+        monkeypatch.setattr(diagnostics, "_import_shap", lambda: None)
+        with caplog.at_level(logging.INFO):
+            _, _, names = self._plots(
+                tmp_path, processed_file, RANDOM_FOREST_TRAINER
+            )
+        assert "shap_beeswarm.png" not in names
+        # The rest of the diagnostics are unaffected.
+        assert "feature_importances.png" in names
+
+    def test_shap_can_be_disabled_on_its_own(self, tmp_path, processed_file, caplog):
+        import logging
+
+        with caplog.at_level(logging.INFO):
+            _, _, names = self._plots(
+                tmp_path,
+                processed_file,
+                RANDOM_FOREST_TRAINER,
+                diagnostics={"shap": {"enabled": False}},
+            )
+        assert "shap_beeswarm.png" not in names
+        assert "diagnostics.shap.enabled=false" in caplog.text
 
 
 class TestTuning:

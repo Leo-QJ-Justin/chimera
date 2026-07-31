@@ -59,3 +59,22 @@ selection:
   metric: f1_macro
   mode: max
   split: val
+
+# Post-fit figures drawn from the fitted model itself, into
+# <run_dir>/plots/ (and therefore into MLflow, via the run-dir upload).
+# Curves come from whatever per-iteration history the family recorded -
+# every epoch for torch, every boosting round for lightgbm/xgboost, none
+# for a one-shot sklearn fit; importances/coefficients come from the
+# fitted estimator. Prediction-based figures (confusion matrix, ROC,
+# calibration, residuals) belong to the evaluation pipeline instead.
+diagnostics:
+  enabled: true
+  shap:
+    # Needs the optional 'explain' extra; without it this step logs one
+    # line and is skipped. Torch runs are skipped either way - gradient
+    # attributions for a neural net are a different tool.
+    enabled: true
+    # Validation rows to explain. Exact explainers are superlinear in rows
+    # and the beeswarm of 200 says what the beeswarm of 20,000 says.
+    sample_size: 200
+    max_display: 20

@@ -22,6 +22,7 @@ from inspect import signature
 
 import pandas as pd
 
+from ..modules.history import booster_history
 from ..modules.model_logging import log_flavor_model
 from .sklearn_common import PipelineArtifactTrainer
 
@@ -105,6 +106,9 @@ class LightGBMTrainer(PipelineArtifactTrainer):
         booster = self._build_model()
 
         fit_kwargs = dict(kwargs)
+        # Filled in place by the record_evaluation callback below; stays empty
+        # when there is no eval set to record.
+        evals_result: dict = {}
         if X_val is not None and y_val is not None:
             X_val_t = preprocessor.transform(self.align(X_val))
             # LightGBM 4.7 renamed `eval_set` to `eval_X`/`eval_y` and warns on
@@ -114,7 +118,9 @@ class LightGBMTrainer(PipelineArtifactTrainer):
                 fit_kwargs.update({"eval_X": X_val_t, "eval_y": y_val})
             else:
                 fit_kwargs["eval_set"] = [(X_val_t, y_val)]
-            callbacks = []
+            # Capture only: the orchestrator replays history into the tracker,
+            # so the trainer stays free of tracking and plotting code.
+            callbacks = [lightgbm.record_evaluation(evals_result)]
             if self.early_stopping_rounds:
                 callbacks.append(
                     lightgbm.early_stopping(self.early_stopping_rounds, verbose=False)
@@ -130,6 +136,7 @@ class LightGBMTrainer(PipelineArtifactTrainer):
 
         booster.fit(X_train_t, y, **fit_kwargs)
         self.best_iteration = getattr(booster, "best_iteration_", None)
+        self.history = booster_history(evals_result)
         self.assemble(preprocessor, booster)
         logger.info(
             "Trained %s on %d rows (best_iteration=%s of %s)",

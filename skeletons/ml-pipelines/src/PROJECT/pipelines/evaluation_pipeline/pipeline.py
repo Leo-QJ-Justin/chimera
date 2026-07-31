@@ -13,6 +13,7 @@ needs to preprocess something, the preprocessing belongs upstream.
         report.json    metrics, per-class table, error summary, triage rows
         report.md      the same thing, readable, for a PR or a ticket
         metrics.jsonl  structured metric sidecar (works with MLflow off)
+        plots/         confusion matrix, ROC/PR/calibration, residuals
 """
 
 import json
@@ -32,6 +33,7 @@ from ...core.run_artifacts import (
 from ...core.timing import stage_timer
 from ...core.tracking import init_tracking
 from ...schemas import EvaluationConfig
+from .modules.diagnostics import write_evaluation_plots
 from .modules.metrics import compute_metrics, log_metrics, per_class_table
 from .modules.triage import error_summary, to_markdown, worst_cases
 
@@ -70,10 +72,15 @@ class EvaluationPipeline:
             metrics = compute_metrics(
                 joined[config.target], joined[config.prediction_col], task=config.task
             )
+            # Before the metrics are logged, not after: the curves produce
+            # roc_auc/pr_auc, and those belong in the same metric set as
+            # everything else rather than in a second, later one.
+            plots, curve_metrics = self._write_plots(run_dir, joined)
+            metrics.update(curve_metrics)
             log_metrics(metrics, "evaluation")
             tracker.log_metrics(metrics)
 
-            report = self._build_report(joined, metrics, timestamp)
+            report = self._build_report(joined, metrics, timestamp, plots)
             self._write_report(run_dir, report)
             save_config_snapshot(run_dir, config.model_dump())
             save_latest_pointer(config.output_dir, timestamp)
@@ -144,9 +151,36 @@ class EvaluationPipeline:
         if missing:
             raise KeyError(f"{what} is missing required column(s): {missing}")
 
+    # ----------------------------------------------------------------- plots
+
+    def _write_plots(self, run_dir: Path, joined: pd.DataFrame) -> tuple[list, dict]:
+        """Draw the report's figures, or say why there are none.
+
+        Failures warn rather than abort, and each figure is guarded
+        individually inside the module: a report that lost one plot is
+        still a report.
+        """
+        config = self.config
+        if not config.plots.enabled:
+            logger.info("plots.enabled=false; the report carries no figures")
+            return [], {}
+        try:
+            return write_evaluation_plots(
+                run_dir,
+                joined,
+                target=config.target,
+                prediction_col=config.prediction_col,
+                task=config.task,
+            )
+        except Exception as e:
+            logger.warning("Evaluation plots failed (%s); the report is intact", e)
+            return [], {}
+
     # ---------------------------------------------------------------- report
 
-    def _build_report(self, joined: pd.DataFrame, metrics: dict, timestamp: str) -> dict:
+    def _build_report(
+        self, joined: pd.DataFrame, metrics: dict, timestamp: str, plots: list
+    ) -> dict:
         config = self.config
         triage = worst_cases(
             joined,
@@ -168,6 +202,8 @@ class EvaluationPipeline:
             ),
             "triage": triage.to_dict(orient="records"),
         }
+        if plots:
+            report["plots"] = plots
         if config.task == "classification":
             report["per_class"] = per_class_table(
                 joined[config.target], joined[config.prediction_col]
@@ -262,8 +298,18 @@ class EvaluationPipeline:
             f"## Triage: worst {config.triage.top_n}",
             "",
             to_markdown(triage, empty_note="_no errors to triage_"),
-            "",
         ]
+        if "plots" in report:
+            # Relative links, so the report reads correctly from inside the run
+            # directory and from the MLflow artifact browser alike. Only files
+            # that were actually written are listed.
+            lines += [
+                "",
+                "## Plots",
+                "",
+                *[f"![{Path(p).stem}]({p})" for p in report["plots"]],
+            ]
+        lines.append("")
         return "\n".join(lines)
 
 

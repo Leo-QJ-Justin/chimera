@@ -74,6 +74,7 @@ model-input table
   → [optional] trainer.hyperparameter_tune(...)
   → trainer.train(train, val)
   → trainer.evaluate(each split)
+  → post-fit diagnostics (curves, importances, SHAP)
   → trainer.save(run_dir) + metadata + snapshot + pointers
 ```
 
@@ -100,7 +101,62 @@ different runs and need not share an order), then writes:
   bug, or a genuinely hard region), or rows ranked by `|error|` for
   regression, with `drill_down_columns` carried so a bad row can be read
   without a second join;
-- a comparison against the metric `best.json` recorded at training time.
+- a comparison against the metric `best.json` recorded at training time;
+- the figures below, linked from `report.md` as relative image links.
+
+## Diagnostic artifacts
+
+Every run directory carries a `plots/` subdirectory. Nothing uploads it
+explicitly: both pipelines already log their whole run directory as MLflow
+artifacts at the end, so **a new artifact is a file written in the right
+place, never a new tracking call** — and the directory on disk and the
+MLflow run always show the same thing.
+
+The split is by what each figure *needs*, which is why it lands on the
+side it does. Model-based diagnostics need the estimator's internals and
+can only be drawn while it is in memory; prediction-based ones need the
+predictions table and nothing else, so drawing them at training time would
+mean scoring a sample twice (the thing the one-data-path rule prevents).
+
+| File | Pipeline | From | Present for |
+|---|---|---|---|
+| `plots/training_curves.png` | training | `trainer.history` | `torch`, `lightgbm`, `xgboost` |
+| `plots/feature_importances.png` + `.csv` | training | `feature_importances_` or `coef_` | everything but `torch` |
+| `plots/shap_beeswarm.png`, `plots/shap_bar.png` | training | `shap.Explainer` over sampled validation rows | everything but `torch`, with the `explain` extra |
+| `plots/confusion_matrix.png` | evaluation | hard predictions | classification |
+| `plots/roc_curves.png`, `plots/pr_curves.png` | evaluation | `proba_*` columns | classification |
+| `plots/calibration_curve.png` | evaluation | `proba_*` columns | binary classification |
+| `plots/residuals.png` | evaluation | hard predictions | regression |
+
+ROC and PR also contribute `roc_auc` / `pr_auc` to the evaluation report's
+metrics (macro-averaged, with per-class values, for multiclass); the curves
+themselves are one-vs-rest overlaid on a single axes. `torch` is skipped
+for attributions deliberately: gradient attributions for a neural net are
+a different tool (captum), not a variant of `feature_importances_`.
+
+The `proba_*` columns come from inference with `include_probabilities:
+true`. Without them the confusion matrix is still drawn and a log line
+says which three were skipped and why.
+
+Boosters reach `training_curves.png` by *capturing*, not by plotting:
+LightGBM's `record_evaluation` callback and XGBoost's `evals_result()` are
+flattened into the same `history` shape the torch trainer fills
+(`modules/history.py`), and the orchestrator replays that into MLflow
+step-wise. Trainers stay free of both tracking and plotting code.
+
+Diagnostics never fail a run. Each figure is individually wrapped in the
+same warn-and-continue pattern model logging uses: one that cannot be
+drawn costs a log line and nothing else. Kill switches are
+`diagnostics.enabled` and `diagnostics.shap.enabled` (training) and
+`plots.enabled` (evaluation).
+
+Why hand-rolled sklearn + matplotlib rather than `mlflow.models.evaluate`:
+that API wants fluent global run state and a served model endpoint, and
+the core `Tracker` drives `MlflowClient` with an explicit `run_id`
+precisely to avoid fluent state — plus these figures must work with
+tracking off entirely. `matplotlib` is therefore a **core** dependency;
+`shap` is the optional `explain` extra, and without it that one step logs
+a line and is skipped.
 
 ## The trainer contract
 
@@ -174,7 +230,8 @@ actually accepts.
 ## Running it
 
 ```bash
-uv sync --extra lightgbm --extra xgboost --extra torch --extra tune --extra dev
+uv sync --extra lightgbm --extra xgboost --extra torch --extra tune \
+        --extra explain --extra dev
 python run_data.py                       # -> data/processed/model_input.parquet
 python run_training.py                   # -> outputs/training/<ts>/
 python run_inference.py                  # -> outputs/inference/predictions.parquet
@@ -201,6 +258,8 @@ python run_training.py split.mode=temporal \
 python run_inference.py model.use=latest input_path=data/raw/new_batch.csv
 python run_evaluation.py triage.top_n=50 '+triage.drill_down_columns=[num_a]'
 python run_data.py mlflow.enabled=false   # how the test suite stays hermetic
+python run_training.py diagnostics.shap.enabled=false   # skip the slow one
+python run_evaluation.py plots.enabled=false
 ```
 
 **Quote timestamps.** `model.timestamp=20260730_143000` is read by Hydra's
