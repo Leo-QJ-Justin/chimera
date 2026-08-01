@@ -71,9 +71,10 @@ training pipeline can record split membership by stable key.
 model-input table
   → split (recorded by key + fingerprint)
   → build_trainer(cfg.trainer)
+  → trainer.fit_frames(X, y)
   → [optional] trainer.hyperparameter_tune(...)
   → trainer.train(...)
-  → trainer.evaluate(each split)
+  → trainer.evaluate_run(...)
   → post-fit diagnostics (curves, importances, SHAP)
   → trainer.save(run_dir) + metadata + snapshot + pointers
 ```
@@ -81,10 +82,16 @@ model-input table
 There is no `if trainer.kind == ...` anywhere in `pipeline.py`, and adding
 a model family never touches it.
 
-#### Two protocols, chosen by the family — not by the orchestrator
+#### Two protocols, expressed by the family — not by the orchestrator
 
-The middle three steps run one of two protocols, selected from the
-trainer's own `uses_val_in_fit` flag:
+The middle four steps run one of two protocols, and the family expresses
+its own through three methods the orchestrator calls unconditionally:
+`fit_frames` (how this run's data is shaped for the fit), `evaluate_run`
+(what the run may claim) and `selection_key` (what `best.json` therefore
+means). `pipeline.py` never reads `uses_val_in_fit` — that flag is the
+family's *declaration*, which its own three methods act on and which
+`cross_validate` reads to decide whether a fold carves its own stopping
+subset.
 
 | | **pooled** (`uses_val_in_fit = False`) | **standing val** (`uses_val_in_fit = True`) |
 |---|---|---|
@@ -108,7 +115,9 @@ Test is untouched under both, `splits.json` records all three splits under
 both, and `metadata.json`'s `training_info` says which protocol ran
 (`selection_basis`, `fit_splits`, `n_fit_rows`). `selection.split` applies
 only to the standing-val protocol; a pooled run logs one line saying it was
-ignored. Rationale and sources: R1.10 in the design spec.
+ignored. Everything a run scores happens inside the one `evaluate_run`
+call, so the whole scoring stage is one timing key, `time_evaluate_s`.
+Rationale and sources: R1.10 and R1.13 in the design spec.
 
 #### Comparing families: `selection.basis: cv`
 
@@ -238,10 +247,13 @@ accepted price for that.
 | `_build_model()` | subclass | A **fresh**, seeded, unfitted estimator. Called per train, per CV fold, per tuning trial — a shared object is what makes cross-validation dishonest. |
 | `TUNABLE` | subclass, always | That family's search space as declared data — parameter name → default range — sitting beside the constructor those ranges are for. `trainer.tune.space` narrows any of them per run, or drops one with `false`. Annotated without a default for the same reason `uses_val_in_fit` is. |
 | `_get_param_space(trial, space)` | subclass | One trial's parameters, suggested define-by-run from the merged space, plus any value derived from a suggestion (a solver's penalty, a layer list from a width and a depth). |
+| `fit_frames(X, y)` | subclass, always | The frames this family's search and final fit see, as a `FitFrames` — `X_fit` (exactly the rows of `fit_splits`, in split order), the standing referee frames or `None`, and the `fit_splits` metadata records. The orchestrator then makes one unconditional `train(X_fit, y_fit, X_ref, y_ref)` call. |
 | `train(X, y, X_val, y_val)` | subclass | Validation data is in the *signature* because three of the five trainers need it during the fit. |
-| `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It picks the run's protocol (above), so the base annotates it without defaulting it and every family states its own — a new trainer that omits it fails the contract suite rather than inheriting a protocol nobody chose. |
+| `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It is the family's declaration of its protocol (above): the family's own three protocol methods act on it, `cross_validate` reads it for the fold carve, and the base annotates it without defaulting it — a new trainer that omits it fails the contract suite rather than inheriting a protocol nobody chose. |
 | `predict` / `predict_proba` | subclass / optional | `predict_proba` returns None when the family has none, rather than faking probabilities. |
 | `evaluate(X, y, metrics=…)` | subclass, always | Three identical lines per family (`check_fitted`, then `compute_metrics` over its own predictions) and nothing inherited. The definitions still come from one place — `evaluation_pipeline/modules/metrics.py` — so no family scores itself with its own metric, but the measurement is visible in the file whose predictions it measures. |
+| `evaluate_run(X, y, X_fit, y_fit, …)` | subclass, always | Every number the run publishes, in the terms its protocol can defend — the pooled families score `dev_*`/`test_*` plus the CV estimate, the standing-val families score `train_*`/`val_*`/`test_*` and add the CV estimate under `selection.basis: cv`. Takes `metric`/`cv`/`basis`/`split` as plain values; no trainer ever receives a config object or the tracker. |
+| `selection_key(metric, basis, split)` | subclass, always | `(basis, metric key)` — what `best.json` means for this run. Pure and callable unfitted, because the tracker params, the metadata envelope and the pointer all name the basis before there is a model to ask. |
 | `cross_validate(X, y, cv, metrics)` | **base** | A fresh **trainer** per fold running this family's real `train` — including, for a family that early-stops, a stopping subset carved out of that fold's own rows (R1.11). The splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
 | `hyperparameter_tune(...)` | subclass, always | Abstract on the base and abstract *only* — no shared sweeper, no hooks. Every trial is scored by the procedure the family actually ships (pooled families through `cross_validate`, standing-val families on a carved 20% holdout their trials early-stop against), in project metric aliases. Winners are folded into `params` so the next `train` actually uses them. |
 | `log_model(tracker, example)` | subclass | The fitted model in that family's own MLflow flavor. See below. |

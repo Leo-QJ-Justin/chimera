@@ -21,8 +21,9 @@ Four decisions the rest of the file assumes:
 - **Validation data is in ``train``'s signature**, not out-of-band state,
   because three shipped trainers need it during the fit (LightGBM and
   XGBoost early stopping, torch's per-epoch monitor). A trainer with no
-  use for it ignores it - and says so through ``uses_val_in_fit``, which
-  is what picks the run's tuning and selection protocol (R1.10) and, inside
+  use for it ignores it - and says so through ``uses_val_in_fit``, the
+  declaration the family's own ``fit_frames`` / ``evaluate_run`` /
+  ``selection_key`` then act on (R1.10, R1.13) and which decides, inside
   ``cross_validate``, whether each fold carves its own stopping subset
   (R1.11).
 - **``predict_proba`` may return None.** The inference pipeline degrades to
@@ -40,7 +41,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -71,6 +72,25 @@ TUNE_HOLDOUT_FRACTION = 0.2
 # referee, for families whose fit needs one (R1.11). Matches the standing
 # val split's share of the run, so a fold's fit is shaped like the real one.
 CV_STOP_FRACTION = 0.15
+
+
+class FitFrames(NamedTuple):
+    """What one run's search and final fit are handed, per protocol.
+
+    Returned by :meth:`BaseTrainer.fit_frames`, which is how the training
+    pipeline shapes a run's data without knowing which family it got.
+    """
+
+    X_fit: pd.DataFrame
+    y_fit: pd.Series
+    # The standing referee an in-fit stopping criterion needs; None when the
+    # family's fit reads none, so that a family which pooled those rows into
+    # X_fit cannot also be handed them as a "validation split".
+    X_ref: pd.DataFrame | None
+    y_ref: pd.Series | None
+    # What ``metadata.json`` records as ``fit_splits``: ["train"], or
+    # ["train", "val"] for a family that pooled them.
+    fit_splits: list[str]
 
 
 def resolve_tune_metric(
@@ -138,9 +158,11 @@ class BaseTrainer(ABC):
         scale_numeric: Whether this family's preprocessing standardises
             numerics. Trees set it False; splits are scale-invariant.
         uses_val_in_fit: Whether ``train`` consumes the validation split.
-            The training pipeline reads it to pick the protocol (R1.10):
-            True keeps val a standing referee outside the fit, False pools
-            train+val and selects on a k-fold CV estimate.
+            The family's own protocol methods act on it (R1.10): True keeps
+            val a standing referee outside the fit, False pools train+val
+            and selects on a k-fold CV estimate. The orchestrator never
+            reads it (R1.13); ``cross_validate`` does, to decide whether a
+            fold carves its own stopping subset.
         TUNABLE: This family's search space - parameter name -> default
             range - declared in its own class body and overridable per run
             through ``trainer.tune.space``.
@@ -217,6 +239,29 @@ class BaseTrainer(ABC):
         """
 
     @abstractmethod
+    def fit_frames(self, X: dict, y: dict) -> FitFrames:
+        """The frames this family's search and final fit see (R1.13).
+
+        How a run's data is shaped for the fit is family knowledge, so the
+        orchestrator asks rather than branching on a flag: it makes one
+        unconditional ``train(X_fit, y_fit, X_ref, y_ref)`` call and one
+        tune call over the same fit frames, whichever family it was handed.
+
+        Args:
+            X: ``{"train"/"val"/"test": features}``, the realized split.
+            y: The matching targets, under the same keys.
+
+        Returns:
+            A :class:`FitFrames`. ``X_fit`` holds exactly the rows of
+            ``fit_splits``, **in split order** - the order is what lets a
+            temporal run's CV fold carve its stopping subset off the end of
+            its own training window. ``X_ref`` is None if and only if this
+            family's fit consumes no standing referee, which must agree with
+            what it declared through ``uses_val_in_fit``. Test is never
+            touched.
+        """
+
+    @abstractmethod
     def train(
         self,
         X: pd.DataFrame,
@@ -246,6 +291,62 @@ class BaseTrainer(ABC):
             X: Features, in any column order (realigned internally).
             y: Ground truth.
             metrics: Metric names or callables; None -> the task defaults.
+        """
+
+    @abstractmethod
+    def evaluate_run(
+        self,
+        X: dict,
+        y: dict,
+        X_fit: pd.DataFrame,
+        y_fit,
+        *,
+        metric: str,
+        cv: int,
+        basis: str,
+        split: str,
+    ) -> dict[str, float]:
+        """Every number this run publishes, in terms its protocol defends.
+
+        What a run may claim follows from how it was fitted, so the family
+        scores itself and the orchestrator only times the call and logs the
+        result. It is handed the split frames, the frames the fit consumed,
+        and the run's ``selection`` values as plain arguments - no config
+        object and no tracker reach a trainer.
+
+        Args:
+            X: ``{"train"/"val"/"test": features}``, the realized split.
+            y: The matching targets, under the same keys.
+            X_fit: The frames the fit consumed (:meth:`fit_frames`).
+            y_fit: The matching targets.
+            metric: ``selection.metric``, a project metric alias.
+            cv: Fold count for a CV estimate - the run's ``trainer.tune.cv``,
+                which is its declared CV budget whether or not a search ran.
+            basis: ``selection.basis`` (``auto`` | ``cv``).
+            split: ``selection.split``. In the signature because both
+                protocols name it in the line they log about it.
+
+        Returns:
+            ``{metric key: value}``, containing the key
+            :meth:`selection_key` names for the same arguments. ``test_*``
+            is scored exactly once, and a family whose fit consumed val
+            publishes no ``val_*``: a metric labelled "val" is read as
+            held-out, and the label is why anyone trusts the number.
+        """
+
+    @abstractmethod
+    def selection_key(self, *, metric: str, basis: str, split: str) -> tuple[str, str]:
+        """``(basis, metric key)`` - what ``best.json`` means for this run.
+
+        Pure, and callable on an unfitted trainer: the tracker params, the
+        metadata envelope and the pointer all name the basis, and none of
+        them should have to wait for a model to exist to find out what it is.
+
+        Returns:
+            The recorded ``selection_basis`` and the key of the number the
+            pointer ranks on - which :meth:`evaluate_run` publishes for the
+            same arguments. The key's prefix is what stops two kinds of
+            estimate from being silently ranked against each other.
         """
 
     @abstractmethod

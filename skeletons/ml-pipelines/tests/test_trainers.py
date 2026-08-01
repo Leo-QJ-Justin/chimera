@@ -56,6 +56,11 @@ OWN_ML_METHODS = (
     "save",
     "load",
     "log_model",
+    # The protocol trio (R1.13): how this family's data is shaped for the
+    # fit, what its run may claim, and what best.json then means.
+    "fit_frames",
+    "evaluate_run",
+    "selection_key",
 )
 
 
@@ -225,6 +230,90 @@ class TestContract:
         # model_type IS the family key: one string names class, config and run.
         assert trainer.model_type == spec["kind"]
         assert get_trainer_class(trainer.model_type) is type(trainer)
+
+
+@pytest.fixture
+def split_frames(synthetic_frame, features):
+    """``(X, y)`` keyed by split name, as the orchestrator hands them over."""
+    columns = [*features["numeric_features"], *features["categorical_features"]]
+    cut = int(len(synthetic_frame) * TEST_TRAIN_SIZE)
+    half = (len(synthetic_frame) - cut) // 2
+    parts = {
+        "train": synthetic_frame.iloc[:cut],
+        "val": synthetic_frame.iloc[cut : cut + half],
+        "test": synthetic_frame.iloc[cut + half :],
+    }
+    return (
+        {name: part[columns] for name, part in parts.items()},
+        {name: part[TEST_TARGET] for name, part in parts.items()},
+    )
+
+
+@pytest.mark.parametrize("spec", TRAINER_SPECS)
+class TestProtocolMethods:
+    """The three methods that keep the orchestrator protocol-blind (R1.13).
+
+    ``fit_frames`` shapes the run's data and ``selection_key`` says what
+    ``best.json`` will mean - both without a fitted model, which is the
+    point: the pipeline calls them to sequence a run, never to branch on
+    which family it got. ``evaluate_run`` is asserted end to end by the
+    training-pipeline suite, where its postconditions are the metric sets a
+    run actually publishes.
+    """
+
+    def test_fit_frames_states_the_familys_protocol(self, spec, features, split_frames):
+        X, y = split_frames
+        trainer = _build(spec, features)
+        fit = trainer.fit_frames(X, y)
+
+        if trainer.uses_val_in_fit:
+            # Val stays outside the fit, as the referee the fit reads.
+            assert fit.fit_splits == ["train"]
+            assert fit.X_fit.index.equals(X["train"].index)
+            assert fit.X_ref.index.equals(X["val"].index)
+        else:
+            assert fit.fit_splits == ["train", "val"]
+            assert fit.X_ref is None
+            assert len(fit.X_fit) == len(X["train"]) + len(X["val"])
+            # Concatenated in split order: a temporal run's pool has to stay
+            # chronological for a fold to carve its own tail honestly.
+            assert fit.X_fit.index[: len(X["train"])].equals(X["train"].index)
+        assert len(fit.y_fit) == len(fit.X_fit)
+        # Test is outside the fit under either protocol.
+        assert not set(fit.X_fit.index) & set(X["test"].index)
+
+    def test_fit_frames_agrees_with_the_declared_flag(self, spec, features, split_frames):
+        """The frames and the flag are two statements of one fact.
+
+        ``uses_val_in_fit`` is what ``cross_validate`` reads to decide
+        whether a fold carves its own stopping subset, so a family whose
+        ``fit_frames`` pooled val while still declaring True would have its
+        folds refereed by rows its real fit never held out.
+        """
+        cls = get_trainer_class(spec["kind"])
+        fit = _build(spec, features).fit_frames(*split_frames)
+
+        assert (fit.X_ref is None) == (not cls.uses_val_in_fit)
+        assert (fit.y_ref is None) == (not cls.uses_val_in_fit)
+
+    def test_selection_key_says_what_best_json_will_mean(self, spec, features):
+        """Pure, and answerable before anything is fitted.
+
+        A pooled family has no held-out split left to select on, so it
+        answers ``cv_`` whatever ``selection.split`` says; a standing-val
+        family honours the split until ``selection.basis: cv`` puts every
+        family on the one cross-comparable number (R1.11).
+        """
+        trainer = _build(spec, features)
+        pooled = not trainer.uses_val_in_fit
+        comparable = ("cv", "cv_f1_macro")
+
+        for split in ("val", "test"):
+            auto = trainer.selection_key(metric="f1_macro", basis="auto", split=split)
+            assert auto == (comparable if pooled else (split, f"{split}_f1_macro"))
+            cv = trainer.selection_key(metric="f1_macro", basis="cv", split=split)
+            assert cv == comparable
+        assert not trainer.fitted
 
 
 @pytest.mark.parametrize("spec", TRAINER_SPECS)

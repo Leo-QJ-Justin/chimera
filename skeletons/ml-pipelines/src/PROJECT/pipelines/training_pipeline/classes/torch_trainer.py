@@ -47,7 +47,7 @@ import numpy as np
 import pandas as pd
 
 from ....schemas import ChoiceSpace, FloatSpace, IntSpace, ParamSpace, TorchTrainerConfig
-from ...evaluation_pipeline.modules.metrics import compute_metrics
+from ...evaluation_pipeline.modules.metrics import compute_metrics, log_metrics, prefixed
 from ..modules.architectures import MLP, count_parameters
 from ..modules.callbacks import (
     EarlyStoppingMonitor,
@@ -71,6 +71,7 @@ from ..modules.sanity import overfit_single_batch
 from .base_trainer import (
     TUNE_HOLDOUT_FRACTION,
     BaseTrainer,
+    FitFrames,
     _import_optuna,
     resolve_tune_metric,
 )
@@ -191,6 +192,17 @@ class TorchTrainer(BaseTrainer):
         return resolved
 
     # ------------------------------------------------------------------ fit
+
+    def fit_frames(self, X: dict, y: dict) -> FitFrames:
+        """The standing-val protocol: fit on train, val stays the referee.
+
+        Val is handed back as the referee frames rather than pooled into the
+        fit, because the epoch loop reads it every epoch - early stopping,
+        the LR schedule and the best-checkpoint choice all monitor it, and
+        rows inside the training data cannot referee any of that (R1.10).
+        Test is untouched either way.
+        """
+        return FitFrames(X["train"], y["train"], X["val"], y["val"], ["train"])
 
     def train(
         self,
@@ -380,6 +392,82 @@ class TorchTrainer(BaseTrainer):
         """Score a frame with the project's metric definitions."""
         self.check_fitted()
         return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
+
+    def evaluate_run(
+        self,
+        X: dict,
+        y: dict,
+        X_fit: pd.DataFrame,
+        y_fit,
+        *,
+        metric: str,
+        cv: int,
+        basis: str,
+        split: str,
+    ) -> dict[str, float]:
+        """Every named split scored, plus the CV estimate under ``basis: cv``.
+
+        Val stayed outside the fit, so it is a genuinely held-out number and
+        is published as one; train is scored too, as the overfitting
+        reference. ``X_fit``/``y_fit`` are accepted and unread - this
+        protocol scores the named splits, and the signature is the same for
+        every family.
+
+        Under ``selection.basis: cv`` the fit above is untouched - this
+        family's epoch loop still needs its standing referee - but the
+        number ``best.json`` records becomes a procedure CV over the
+        train+val pool, where each fold carves its own referee (R1.11). That
+        is what a pooled family's ``cv_`` number already is, so the two rank
+        against each other. It costs ``cv`` full epoch loops, which the CV
+        log line says out loud rather than hiding. The std travels with the
+        mean because a selection criterion is a random variable: two runs
+        0.002 apart on a fold spread of 0.05 have not been distinguished
+        (Cawley & Talbot 2010).
+        """
+        metrics: dict[str, float] = {}
+        for name in ("train", "val", "test"):
+            split_metrics = self.evaluate(X[name], y[name])
+            log_metrics(split_metrics, name)
+            metrics.update(prefixed(split_metrics, name))
+        if basis != "cv":
+            return metrics
+
+        logger.info(
+            "selection.basis=cv: %s keeps its standing-val fit, and best.json "
+            "reads a procedure-CV estimate on train+val instead of %s_%s",
+            self.model_type,
+            split,
+            metric,
+        )
+        # Pooled in split order, so a temporal run's pool stays chronological,
+        # which is what lets a fold carve its stopping subset off the end of
+        # its own training window rather than out of the middle of it.
+        X_pool = pd.concat([X["train"], X["val"]])
+        y_pool = pd.concat([y["train"], y["val"]])
+        stats = self.cross_validate(X_pool, y_pool, cv=cv, metrics=[metric])[metric]
+        logger.info(
+            "CV estimate on train+val: %s = %.4f +/- %.4f over %d folds",
+            metric,
+            stats["mean"],
+            stats["std"],
+            cv,
+        )
+        metrics[f"cv_{metric}"] = stats["mean"]
+        metrics[f"cv_{metric}_std"] = stats["std"]
+        return metrics
+
+    def selection_key(self, *, metric: str, basis: str, split: str) -> tuple[str, str]:
+        """The configured split's score, unless the run asked for the CV basis.
+
+        Val stayed outside the fit, so ``selection.split`` names a real
+        out-of-sample number and is honoured. ``selection.basis: cv`` trades
+        it for the procedure-CV estimate every family can publish, which is
+        what makes runs of different families rankable in one output
+        directory (R1.11).
+        """
+        if basis == "cv":
+            return "cv", f"cv_{metric}"
+        return split, f"{split}_{metric}"
 
     def fresh(self) -> "TorchTrainer":
         """An unfitted twin, minus the knobs that belong to the real run.

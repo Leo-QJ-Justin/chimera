@@ -434,6 +434,9 @@ Algorithm Selection* (three-way holdout for large data and deep learning
 where refitting is expensive and a monitor split is needed; k-fold for
 small-to-moderate data), Cawley & Talbot 2010, Varma & Simon 2006.
 
+*(Amended by R1.13: the protocol is expressed by three per-family methods;
+the orchestrator no longer reads `uses_val_in_fit` at all.)*
+
 **R1.11 (follow-up, 2026-08-01): every family cross-validates its whole
 procedure, and `selection.basis` makes the estimate cross-comparable.**
 R1.10 left two kinds of selection number in circulation — a pooled
@@ -582,6 +585,58 @@ A blanket maximize default would let `metric: rmse` search for the worst
 model in the space and still finish, still write a run, and still update a
 pointer. `cv_scoring` — the sklearn scorer bridge only the old sweeper used —
 is deleted with it.
+
+**R1.13 (follow-up, 2026-08-01): the protocol lives in the family, and the
+orchestrator only sequences it.** R1.12 made each trainer file readable on
+its own, but `pipeline.py` still branched on `trainer.uses_val_in_fit` in
+five places: shaping the fit frames, deciding whether `train` was handed a
+validation argument, picking which metric set to score, deriving
+`fit_splits` for metadata, and naming the selection key. How data is shaped
+for a family's fit and which numbers its run can defend is family
+knowledge; splitting it between the family's class body and the
+orchestrator's `if` is what makes "which protocol did this run follow?" a
+two-file question.
+
+Three methods, abstract on `BaseTrainer` and written in every family's own
+class body — enforced by the same `__dict__` contract test R1.12 added for
+`evaluate` and `hyperparameter_tune`:
+
+- `fit_frames(X, y) -> FitFrames` — the frames the search and the final fit
+  see. `X_fit` holds exactly the rows of `fit_splits`, **in split order** (a
+  temporal pool has to stay chronological for a fold to carve its own tail);
+  `X_ref` is the standing referee, or None when the family's fit reads none,
+  which must agree with its `uses_val_in_fit` declaration; test is never
+  touched.
+- `evaluate_run(X, y, X_fit, y_fit, *, metric, cv, basis, split)` — every
+  metric the run publishes. Postconditions: it contains the key
+  `selection_key` names, `test_*` is scored exactly once, and a family whose
+  fit consumed val publishes no `val_*`.
+- `selection_key(*, metric, basis, split) -> (basis, metric key)` — pure and
+  callable unfitted, because the tracker params, the metadata envelope and
+  the pointer all name the basis before there is a model to ask.
+
+`TrainingPipeline.run()` is then a sequencer: split → `fit_frames` → tune →
+one unconditional `train(X_fit, y_fit, X_ref, y_ref)` → `selection_key` →
+`evaluate_run` → persist. Nine protocol helpers dissolve into the families
+and no read of `uses_val_in_fit` is left in `pipeline.py`, its docstring
+included. The flag stays exactly what it was: the family's own declaration,
+acted on by that family's three methods and read by `cross_validate` to
+decide whether a fold carves its own stopping subset.
+
+Two constraints held throughout. **Trainers stay tracker-free** — no
+trainer method receives the MLflow tracker; the pipeline wraps the call in
+`stage_timer` and logs whatever comes back — and **values, not config
+objects**, cross the boundary, so `metric` / `cv` / `basis` / `split`
+arrive as plain arguments unpacked from `selection` and `trainer.tune`.
+
+Accepted costs. Scoring is now one timer: `time_selection_cv_s` is gone and
+`time_evaluate_s` covers the whole `evaluate_run` call, so a dashboard keyed
+on the old name needs updating (and a standing-val run gains an evaluate
+timing it never had). The two protocol INFO lines are unchanged in text but
+are emitted by the family's module logger rather than the pipeline's. And
+`evaluate_run` is five sibling implementations rather than one branch — the
+same duplication R1.12 accepted, guarded by the end-to-end suite, which runs
+all five families and asserts exactly these postconditions.
 
 ## Build plan (next task, via /start-task)
 

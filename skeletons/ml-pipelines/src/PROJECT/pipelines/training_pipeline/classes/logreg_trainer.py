@@ -29,9 +29,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from ....schemas import ChoiceSpace, FloatSpace, ParamSpace
-from ...evaluation_pipeline.modules.metrics import compute_metrics
+from ...evaluation_pipeline.modules.metrics import compute_metrics, log_metrics, prefixed
 from ..modules.model_logging import log_flavor_model
-from .base_trainer import BaseTrainer, _import_optuna, resolve_tune_metric
+from .base_trainer import BaseTrainer, FitFrames, _import_optuna, resolve_tune_metric
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,30 @@ class LogisticRegressionTrainer(BaseTrainer):
             resolved["l1_ratio"] = space["l1_ratio"].suggest(trial, "l1_ratio")
         return resolved
 
+    def fit_frames(self, X: dict, y: dict) -> FitFrames:
+        """The pooled protocol: train+val is the fit, and there is no referee.
+
+        A fit with no in-fit stopping criterion has no reason to keep 15% of
+        the development data out of itself, so the two splits are pooled and
+        the selection number becomes a CV estimate over the pool (R1.10).
+
+        Order matters: the pool is concatenated in split order, so a
+        temporal run's pool stays chronological, which is what lets a CV
+        fold carve its stopping subset off the end of its own training
+        window rather than out of the middle of it.
+
+        No referee frames come back at all. Those rows are inside ``X_fit``
+        now, and handing them over a second time as a "validation split" is
+        how an in-sample number ends up being read as a held-out one.
+        """
+        return FitFrames(
+            pd.concat([X["train"], X["val"]]),
+            pd.concat([y["train"], y["val"]]),
+            None,
+            None,
+            ["train", "val"],
+        )
+
     def train(
         self,
         X: pd.DataFrame,
@@ -95,7 +119,8 @@ class LogisticRegressionTrainer(BaseTrainer):
 
         The validation split is deliberately unused: a plain sklearn
         estimator has no in-fit stopping criterion, so feeding it val data
-        would only leak it. Val is scored afterwards, by the orchestrator.
+        would only leak it. Under this family's protocol those rows are
+        pooled into ``X`` instead (:meth:`fit_frames`).
         """
         model = Pipeline(
             [("preprocess", self.new_preprocessor()), ("model", self._build_model())]
@@ -124,6 +149,79 @@ class LogisticRegressionTrainer(BaseTrainer):
         """Score a frame with the project's metric definitions."""
         self.check_fitted()
         return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
+
+    def evaluate_run(
+        self,
+        X: dict,
+        y: dict,
+        X_fit: pd.DataFrame,
+        y_fit,
+        *,
+        metric: str,
+        cv: int,
+        basis: str,
+        split: str,
+    ) -> dict[str, float]:
+        """In-sample ``dev_*``, untouched ``test_*``, and the CV estimate.
+
+        Deliberately no ``val_*`` row: those rows are inside the fit, so a
+        metric labelled "val" would be read as held-out when it is not, and
+        the label is the whole reason anyone trusts the number. ``dev_*`` is
+        the pool's in-sample score - the overfitting reference ``train_*``
+        was - and the out-of-sample number this protocol has is the CV
+        estimate below.
+
+        That estimate is this family's own procedure, k times: a fresh
+        trainer per fold running the real :meth:`train` (R1.11), split by
+        the run's own ``split.mode`` (D9), over the pool - so it describes
+        the procedure the run ships rather than a cheaper stand-in for it.
+        The std travels with the mean because a selection criterion is a
+        random variable: two runs 0.002 apart on a fold spread of 0.05 have
+        not been distinguished (Cawley & Talbot 2010).
+
+        ``basis`` is accepted and unread: a pooled run is already on the CV
+        basis, so ``selection.basis: cv`` asks it for nothing new.
+        """
+        logger.info(
+            "%s does not use val during the fit: pooled protocol, so train+val "
+            "is the fit and no val_* metric is emitted",
+            self.model_type,
+        )
+        logger.info(
+            "selection.split=%r is ignored here; best.json reads the CV "
+            "estimate on train+val instead",
+            split,
+        )
+        metrics: dict[str, float] = {}
+        scored = (("dev", X_fit, y_fit), ("test", X["test"], y["test"]))
+        for name, frame, target in scored:
+            split_metrics = self.evaluate(frame, target)
+            log_metrics(split_metrics, name)
+            metrics.update(prefixed(split_metrics, name))
+
+        stats = self.cross_validate(X_fit, y_fit, cv=cv, metrics=[metric])[metric]
+        logger.info(
+            "CV estimate on train+val: %s = %.4f +/- %.4f over %d folds",
+            metric,
+            stats["mean"],
+            stats["std"],
+            cv,
+        )
+        metrics[f"cv_{metric}"] = stats["mean"]
+        metrics[f"cv_{metric}_std"] = stats["std"]
+        return metrics
+
+    def selection_key(self, *, metric: str, basis: str, split: str) -> tuple[str, str]:
+        """Always the CV estimate: this protocol has no held-out split left.
+
+        ``selection.split`` names rows that are inside the fit, so it is
+        ignored and the CV estimate decides; the ``cv_`` prefix is what
+        keeps the two kinds of number from being silently ranked against
+        each other. ``selection.basis: cv`` puts every family on this basis
+        so that runs of different families do rank against each other
+        (R1.11) - a pooled run was already there.
+        """
+        return "cv", f"cv_{metric}"
 
     def hyperparameter_tune(
         self,
