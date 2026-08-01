@@ -7,6 +7,7 @@ import pytest
 # pytest puts tests/ on sys.path (importmode=prepend), so conftest's
 # schema-derived constants are importable by name.
 from conftest import TEST_DATE_COL, TEST_KEY_COLS, TEST_TARGET
+from PROJECT.core.run_artifacts import file_fingerprint
 from PROJECT.pipelines.data_pipeline import (
     DataPipeline,
     clean,
@@ -101,6 +102,17 @@ class TestDataPipeline:
         assert manifest["key_cols"] == TEST_KEY_COLS
         assert manifest["config"]["target"] == TEST_TARGET
         assert manifest["row_counts"]["output_rows"] == len(synthetic_frame)
+
+    def test_manifest_records_the_content_hash_of_what_it_wrote(
+        self, tmp_path, synthetic_frame
+    ):
+        """The table's content identity, not just its path."""
+        config = self._config(tmp_path, synthetic_frame)
+        DataPipeline(config).run()
+
+        content_hash = load_manifest(config.processed_path)["content_hash"]
+        assert len(content_hash) == 16
+        assert content_hash == file_fingerprint(config.processed_path)
 
     def test_ambiguous_keys_fail_loudly(self, tmp_path, synthetic_frame):
         # Duplicate keys that survive dedup (dedup off) would make split

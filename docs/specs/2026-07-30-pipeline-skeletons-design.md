@@ -638,6 +638,81 @@ are emitted by the family's module logger rather than the pipeline's. And
 same duplication R1.12 accepted, guarded by the end-to-end suite, which runs
 all five families and asserts exactly these postconditions.
 
+**R1.14 (follow-up, 2026-08-01): roots and recipes — version the data where
+determinism breaks, record the recipe where it holds.** A run directory
+already pinned the code, the config, the seed and the realized split
+membership, and a reader could still not answer "what exactly did this run
+train on?" without trusting that the file at `processed_path` had not moved
+on. That is the one input a run does not control, and the gap it left was
+not a missing artifact but a missing *identity*: membership by stable key
+says which rows, and nothing said which table.
+
+The principle the four additions follow: everything a model ingests is a
+seeded, recorded derivation of two roots — the processed table and split
+membership — so give the roots an identity and record the recipes, rather
+than storing what the recipes produce.
+
+| What | How it is pinned | Where |
+|---|---|---|
+| Input table | sha256 of the file's bytes, 16 hex | manifest `content_hash`; run `training_info.processed_fingerprint`; tracker param `processed_fp` |
+| Split membership | stable row keys + a membership fingerprint | `splits.json` |
+| Config that ran | post-compose snapshot, overrides applied | `config.yaml` |
+| Code | commit, branch, dirty flag | `training_info.git` |
+| Seeds | one `seed`, threaded, plus the split's own | `config.yaml`, `splits.json` protocol block |
+| Decisions | winning params, selection basis and metric key | `hyperparameters`, `training_info` |
+| Model | the fitted artifact, named in the files map | `metadata.json` `files` |
+| Environment | interpreter + curated distribution versions | `environment.json` |
+
+*Content identity.* `core.run_artifacts.file_fingerprint(path)` is a chunked
+sha256 truncated to 16 hex, deliberately the same shape as
+`core.splits.fingerprint`, so a data hash and a split hash read alike side
+by side. The data pipeline records it for the table it just wrote; the
+training pipeline hashes **what it actually read** rather than copying the
+manifest's value, because a stale manifest is exactly the failure the hash
+exists to catch. The evaluation pipeline rehashes the ground-truth table and
+warns when it differs from the fingerprint the training run recorded —
+warns, never aborts, matching that pipeline's join-and-warn posture, since
+re-scoring an old model on refreshed data is legitimate when it is
+deliberate and only the reader can tell whether it was. Runs written before
+the field simply skip the check.
+
+*The replay path.* `core.splits.load_split_frames(run_dir, processed_path=None)`
+is the documented answer to "give me exactly what run X trained on": it
+resolves the recorded table, verifies its content hash, replays membership
+through `apply_splits`, and returns `(X, y)` keyed by split name exactly as
+the training pipeline built them. It raises rather than approximating — a
+missing table naming the path the run recorded, a changed one saying the
+data this run trained on no longer exists there. Every set downstream of the
+split is a recipe over these frames (the train+val pool, a search's carved
+holdout, the CV folds), replayable from the run's own `config.yaml`.
+
+*Seeded search.* Every family's `hyperparameter_tune` now defaults its
+Optuna sampler to `TPESampler(seed=self.seed)` unless the caller passes one.
+An unseeded sampler leaves the search trajectory unreplayable even when the
+seed, the data and the space are all pinned — which quietly made every tuned
+run a one-off.
+
+*Environment record.* `record_environment(run_dir)` writes `environment.json`
+(`python` plus a curated list of distribution versions, absent ones omitted)
+in the persist stage. Curated rather than a full freeze because the file is
+for reading; the git commit pins the code, this pins what the code ran
+against, which is the remaining reason a pinned rerun can still disagree.
+
+*Rejected: materializing per-run frames.* Writing `train.parquet` /
+`val.parquet` / `test.parquet` into every run directory is the obvious
+alternative and costs roughly one dataset copy per run for information the
+run already holds by reference. It also weakens the contract rather than
+strengthening it: a stored frame cannot tell you it went stale, whereas a
+hash mismatch is loud. The caveat is scope — this holds because the whole
+path from table to fitted model is deterministic and recorded. A
+feature-store or online-serving path, where features are computed at request
+time against state that is not itself versioned, breaks that assumption and
+would justify materializing point-in-time frames; revisit then, not before.
+
+No config knobs were added: hashing one file and writing one small JSON per
+run are cheap enough to be unconditional, and a provenance guarantee with an
+off switch is not one.
+
 ## Build plan (next task, via /start-task)
 
 1. `skeletons/` in chimera: `core/` utils package first (D3, D8, D10, D11,

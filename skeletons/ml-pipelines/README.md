@@ -178,6 +178,47 @@ different runs and need not share an order), then writes:
   estimate on train+val) — the delta is only readable once you know;
 - the figures below, linked from `report.md` as relative image links.
 
+### Reproducing a run
+
+Nothing is copied to make this work. A run records the *identity* of its
+two roots — the model-input table and split membership — and the recipes
+that everything else is derived by, so its frames are re-derived on demand
+rather than stored:
+
+| Pinned | Where |
+|---|---|
+| the input table's bytes | `training_info.processed_fingerprint` (and the data pipeline's manifest `content_hash`) |
+| which rows went where | `splits.json`, by stable key plus a membership fingerprint |
+| the config that ran | `config.yaml`, post-compose, overrides applied |
+| the code | `training_info.git` — commit, branch, dirty flag |
+| the winners and the yardstick | `hyperparameters.best_params`, `selection_basis`, `selection_metric_key` |
+| what it ran against | `environment.json` — interpreter plus package versions |
+
+Ask a past run for its own frames:
+
+```python
+from PROJECT.core.splits import load_split_frames
+
+X, y = load_split_frames("outputs/training/20260801_101500")   # keyed train/val/test
+```
+
+It refuses rather than approximates: if the table has moved it says which
+path the run recorded, and if its contents changed it says the data that
+run trained on no longer exists there. Pass `processed_path=` to point at
+a copy that survived.
+
+Everything downstream of the split replays from those frames through the
+run's own `config.yaml` — the train+val pool a pooled family fits on, the
+20% holdout a standing-val search carves, the CV folds — because each is a
+seeded derivation and the seed is in the snapshot. Searches included:
+Optuna's sampler is seeded from the run's `seed`, so the same spec explores
+the same trajectory and lands on the same `best_params`.
+
+The evaluation pipeline rehashes the ground-truth table it scores against
+and **warns** when it is not the one the model trained on. It warns rather
+than aborting: scoring an old model against refreshed data is a fair thing
+to do on purpose, and a bad thing to do by accident.
+
 ## Diagnostic artifacts
 
 Every run directory carries a `plots/` subdirectory. Nothing uploads it

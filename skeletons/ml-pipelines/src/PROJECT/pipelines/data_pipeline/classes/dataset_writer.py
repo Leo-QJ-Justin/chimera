@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ....core.run_artifacts import make_serialisable
+from ....core.run_artifacts import file_fingerprint, make_serialisable
 from ....schemas import DataPipelineConfig
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,9 @@ class DatasetWriter:
         """
         manifest = {
             "processed_path": str(processed_path),
+            # Content identity for the table just written: a path says where
+            # a training run looked, this says what it found there.
+            "content_hash": file_fingerprint(processed_path),
             "rows": len(df),
             "columns": list(df.columns),
             "dtypes": {c: str(t) for c, t in df.dtypes.items()},

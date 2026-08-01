@@ -49,6 +49,7 @@ arrives as a value it reads, not as a branch taken out here.
         splits.json         realized membership by stable key + fingerprints
         metadata.json       the reload envelope (feature order, files, upstream)
         config.yaml         the post-compose config that actually ran
+        environment.json    interpreter + package versions the run ran under
         metrics.jsonl       structured metric sidecar (works with MLflow off)
         plots/              post-fit diagnostic figures (see modules/diagnostics.py)
 
@@ -62,9 +63,11 @@ from pathlib import Path
 import pandas as pd
 
 from ...core.run_artifacts import (
+    file_fingerprint,
     generate_timestamp,
     get_git_info,
     make_run_dir,
+    record_environment,
     save_best_pointer,
     save_config_snapshot,
     save_latest_pointer,
@@ -118,7 +121,16 @@ class TrainingPipeline:
         try:
             with stage_timer("load_processed", tracker):
                 df = pd.read_parquet(config.processed_path)
-            logger.info("Model-input table: %d rows x %d cols", len(df), df.shape[1])
+            # Hashed here rather than copied out of the data pipeline's
+            # manifest: the record has to be of what this run actually read,
+            # which is the one thing a stale manifest cannot tell it.
+            processed_fp = file_fingerprint(config.processed_path)
+            logger.info(
+                "Model-input table: %d rows x %d cols (content %s)",
+                len(df),
+                df.shape[1],
+                processed_fp,
+            )
 
             numeric, categorical = resolve_feature_columns(df, config)
             trainer = build_trainer(
@@ -168,12 +180,15 @@ class TrainingPipeline:
                     split=selection.split,
                 )
 
-            self._log_run(tracker, trainer, frames, fingerprints, metrics, fit, basis)
+            self._log_run(
+                tracker, trainer, frames, fingerprints, metrics, fit, basis, processed_fp
+            )
             self._log_model(tracker, trainer, fit.X_fit)
             self._log_diagnostics(tracker, run_dir, trainer, X["val"])
 
             with stage_timer("persist", tracker):
                 files = trainer.save(run_dir)
+                record_environment(run_dir)
                 self._save_metadata(
                     run_dir,
                     timestamp,
@@ -184,6 +199,7 @@ class TrainingPipeline:
                     fit,
                     basis,
                     metric_key,
+                    processed_fp,
                 )
                 save_config_snapshot(run_dir, config.model_dump())
             self._update_pointers(timestamp, metrics, metric_key)
@@ -223,7 +239,15 @@ class TrainingPipeline:
         )
 
     def _log_run(
-        self, tracker, trainer, frames, fingerprints, metrics, fit, basis: str
+        self,
+        tracker,
+        trainer,
+        frames,
+        fingerprints,
+        metrics,
+        fit,
+        basis: str,
+        processed_fp: str,
     ) -> None:
         """Params, per-iteration history, and the final metric set."""
         params = trainer.get_params()
@@ -238,6 +262,9 @@ class TrainingPipeline:
         params["n_fit"] = len(fit.X_fit)
         params["selection_basis"] = basis
         params["processed_path"] = self.config.processed_path
+        # Beside the path, because the path alone answers "where did this run
+        # read?" and not "was it the same table as last week's run?".
+        params["processed_fp"] = processed_fp
         tracker.log_params(params)
         for record in trainer.history:
             step = record.get("epoch")
@@ -301,6 +328,7 @@ class TrainingPipeline:
         fit,
         basis: str,
         metric_key: str,
+        processed_fp: str,
     ) -> None:
         """Write the reload envelope, embedding the upstream data config."""
         config = self.config
@@ -331,8 +359,18 @@ class TrainingPipeline:
                 "trainer": trainer.training_summary(),
                 "git": get_git_info(),
                 "processed_path": config.processed_path,
+                # Path plus content hash is what makes the run replayable
+                # without storing its frames: core.splits.load_split_frames
+                # rebuilds them from here and splits.json, and refuses if the
+                # table at that path is no longer the one this run read.
+                "processed_fingerprint": processed_fp,
             },
-            files={**files, "splits": "splits.json", "config": "config.yaml"},
+            files={
+                **files,
+                "splits": "splits.json",
+                "config": "config.yaml",
+                "environment": "environment.json",
+            },
             # The data-pipeline config that produced the training frame, so
             # inference replays training-time preprocessing regardless of what
             # the YAML says later (D10).

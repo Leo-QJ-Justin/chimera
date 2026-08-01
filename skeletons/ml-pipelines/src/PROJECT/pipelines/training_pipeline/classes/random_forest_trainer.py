@@ -268,6 +268,9 @@ class RandomForestTrainer(BaseTrainer):
             scores = candidate.cross_validate(X, y, cv=cv, metrics=[metric])
             return scores[metric]["mean"]
 
+        # An unseeded sampler makes the search trajectory unreplayable even
+        # when the seed, the data and the space are all pinned.
+        optuna_kwargs.setdefault("sampler", optuna.samplers.TPESampler(seed=self.seed))
         study = optuna.create_study(direction=direction, **optuna_kwargs)
         # show_progress_bar is off: the bar writes to stderr and interleaves
         # with the run's log file, which is the thing anyone reads afterwards.

@@ -24,6 +24,7 @@ from conftest import (
     trainer_params,
 )
 from PROJECT.core.run_artifacts import (
+    file_fingerprint,
     get_best_info,
     load_metadata,
     resolve_artifact_path,
@@ -97,6 +98,21 @@ class TestRunArtifacts:
         assert spec["model_class"] == "LogisticRegressionTrainer"
         assert spec["trainer"] == config.trainer.kind
         assert spec["cv_mode"] == config.split.mode
+
+    def test_metadata_pins_the_data_the_run_actually_read(self, trained_run):
+        run_dir, config = trained_run
+        info = load_metadata(run_dir)["training_info"]
+        assert info["processed_path"] == config.processed_path
+        # Hashed from the file, so "same path" and "same table" stay two
+        # separate questions.
+        assert info["processed_fingerprint"] == file_fingerprint(config.processed_path)
+
+    def test_the_environment_the_run_ran_under_is_recorded(self, trained_run):
+        run_dir, _ = trained_run
+        recorded = json.loads((run_dir / "environment.json").read_text())
+        assert recorded["python"]
+        # The one library every family's run goes through, whichever it built.
+        assert "scikit-learn" in recorded["packages"]
 
     def test_metrics_sidecar_is_written_without_mlflow(self, trained_run):
         run_dir, _ = trained_run
@@ -597,6 +613,27 @@ class TestTuning:
         # model rather than the configured one.
         for key, value in spec["best_params"].items():
             assert spec["params"][key] == value
+
+    def test_a_seeded_search_replays(self, tmp_path, processed_file):
+        """Same seed, same spec, same winners - or a tuned run is anecdote.
+
+        Separate output dirs because the run timestamp is second-granular
+        and ``make_run_dir`` refuses a collision.
+        """
+        pytest.importorskip("optuna", reason="needs the 'tune' extra")
+        trainer = {**LOGREG_TRAINER, "tune": {"enabled": True, "n_trials": 2, "cv": 2}}
+        winners = []
+        for name in ("first", "second"):
+            config = make_training_config(
+                tmp_path,
+                processed_file,
+                trainer,
+                output_dir=str(tmp_path / "outputs" / name),
+            )
+            run_dir = TrainingPipeline(config).run()
+            winners.append(load_metadata(run_dir)["hyperparameters"]["best_params"])
+
+        assert winners[0] == winners[1]
 
     def test_a_disabled_space_entry_is_left_to_the_config(self, tmp_path, processed_file):
         """``tune.space: {max_depth: false}`` takes one knob out of the search.

@@ -88,6 +88,30 @@ class TestReport:
             comparison["evaluation_value"] - comparison["best_value"]
         )
 
+    def test_a_changed_ground_truth_table_warns_and_still_reports(
+        self, predictions, evaluation_config_factory, caplog
+    ):
+        """Scoring an old model on refreshed data is allowed, never silent.
+
+        The training run recorded the content hash of the table it read, so
+        the report can say the two are no longer the same population - and
+        say it rather than refuse, because doing this deliberately is a
+        legitimate thing to do.
+        """
+        import logging
+
+        path, training_config = predictions
+        table = pd.read_parquet(training_config.processed_path)
+        table.loc[0, "num_a"] = table.loc[0, "num_a"] + 1.0
+        table.to_parquet(training_config.processed_path, index=False)
+
+        config = evaluation_config_factory(path, training_config)
+        with caplog.at_level(logging.WARNING):
+            run_dir = EvaluationPipeline(config).run()
+
+        assert "different data than the model trained on" in caplog.text
+        assert (run_dir / "report.json").exists()
+
     def test_comparison_is_skipped_when_no_best_exists(
         self, predictions, evaluation_config_factory, tmp_path
     ):

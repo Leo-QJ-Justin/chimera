@@ -548,6 +548,9 @@ class TorchTrainer(BaseTrainer):
             candidate.train(X_tune, y_tune, X_holdout, y_holdout)
             return candidate.evaluate(X_holdout, y_holdout, metrics=[metric])[metric]
 
+        # An unseeded sampler makes the search trajectory unreplayable even
+        # when the seed, the data and the space are all pinned.
+        optuna_kwargs.setdefault("sampler", optuna.samplers.TPESampler(seed=self.seed))
         study = optuna.create_study(direction=direction, **optuna_kwargs)
         # show_progress_bar is off: the bar writes to stderr and interleaves
         # with the run's log file, which is the thing anyone reads afterwards.

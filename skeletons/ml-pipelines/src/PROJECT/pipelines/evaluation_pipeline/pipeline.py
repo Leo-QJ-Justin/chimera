@@ -23,10 +23,13 @@ from pathlib import Path
 import pandas as pd
 
 from ...core.run_artifacts import (
+    file_fingerprint,
     generate_timestamp,
     get_best_info,
+    load_metadata,
     make_run_dir,
     make_serialisable,
+    resolve_artifact_path,
     save_config_snapshot,
     save_latest_pointer,
 )
@@ -68,6 +71,7 @@ class EvaluationPipeline:
         try:
             with stage_timer("join", tracker):
                 joined = self._join()
+            self._check_data_identity()
 
             metrics = compute_metrics(
                 joined[config.target], joined[config.prediction_col], task=config.task
@@ -102,6 +106,44 @@ class EvaluationPipeline:
         return run_dir
 
     # ------------------------------------------------------------------ join
+
+    def _check_data_identity(self) -> None:
+        """Warn when the ground truth is not the table the model trained on.
+
+        The training run hashed the model-input table it read; this rehashes
+        the one being scored against. A mismatch means the file changed
+        underneath the two runs, so every number below describes a different
+        population than the one the training run published - which is a
+        thing to say in the log, not a thing to guess about later.
+
+        Warns rather than aborts, the same posture the join takes on
+        unmatched rows: re-scoring an old model on refreshed data is a
+        legitimate thing to do deliberately and a bad thing to do by
+        accident, and only the reader can tell which this is.
+
+        The run consulted is the one ``best.json`` names, which is the model
+        ``run_inference.py`` loads by default. Silent when there is no
+        training run to ask, or when that run predates the fingerprint.
+        """
+        config = self.config
+        try:
+            timestamp = get_best_info(config.runs_dir)["timestamp"]
+            metadata = load_metadata(resolve_artifact_path(config.runs_dir, timestamp))
+        except (FileNotFoundError, KeyError):
+            return
+        recorded = metadata["training_info"].get("processed_fingerprint")
+        if not recorded:
+            return
+        current = file_fingerprint(config.processed_path)
+        if current != recorded:
+            logger.warning(
+                "Evaluating against different data than the model trained on: "
+                "%s now hashes to %s, run %s read %s",
+                config.processed_path,
+                current,
+                timestamp,
+                recorded,
+            )
 
     def _join(self) -> pd.DataFrame:
         """Predictions + ground truth, matched on the declared keys.

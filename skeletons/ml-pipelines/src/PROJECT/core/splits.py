@@ -7,6 +7,11 @@ indices break silently when the model-input table is regenerated.
 
 The fingerprint (sha256 of the sorted membership) is logged as a run
 param so split-identity across runs is checkable at a glance.
+
+``load_split_frames`` is the read side of that record: membership plus the
+run's content hash of the model-input table is enough to hand back exactly
+the frames a past run trained on, without any run ever storing a copy of
+them.
 """
 
 import hashlib
@@ -15,6 +20,8 @@ import logging
 from pathlib import Path
 
 import pandas as pd
+
+from .run_artifacts import file_fingerprint, load_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +110,64 @@ def apply_splits(df: pd.DataFrame, splits_payload: dict) -> dict[str, pd.DataFra
             )
         out[name] = df[mask]
     return out
+
+
+def load_split_frames(
+    run_dir: str | Path, processed_path: str | Path | None = None
+) -> tuple[dict[str, pd.DataFrame], dict[str, pd.Series]]:
+    """Hand back exactly the frames a recorded run trained on.
+
+    The documented answer to "give me what run X trained on". Nothing is
+    stored to make it work: the run recorded split membership by stable key
+    and the content hash of the table those keys point into, so the frames
+    are *re-derived* - same rows, same feature order, same target - and both
+    halves of that record are verified before anything comes back.
+
+    Every set derived downstream of the split replays from these frames via
+    the seeds in the run's ``config.yaml``: the train+val pool a pooled
+    family fits on, the holdout a standing-val search carves, the CV folds.
+    Those are recipes, and recipes reproduce; this function supplies the
+    roots they run on.
+
+    Args:
+        run_dir: A training run directory (``metadata.json`` + ``splits.json``).
+        processed_path: The model-input table, when it has moved since the
+            run; defaults to the path the run recorded.
+
+    Returns:
+        ``(X, y)``, each keyed by split name, exactly as the training
+        pipeline built them.
+
+    Raises:
+        FileNotFoundError: The table is not where the run said it was.
+        ValueError: Its bytes changed since the run read them, or a
+            recorded member is no longer in it.
+    """
+    metadata = load_metadata(run_dir)
+    info = metadata["training_info"]
+    recorded_path = info["processed_path"]
+    path = Path(processed_path or recorded_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Model-input table {path} not found; the run recorded "
+            f"{recorded_path!r} - pass processed_path= if it moved"
+        )
+    # Runs written before the fingerprint existed are read on membership
+    # alone; apply_splits still catches a table that lost rows.
+    recorded_fp = info.get("processed_fingerprint")
+    if recorded_fp and file_fingerprint(path) != recorded_fp:
+        raise ValueError(
+            f"Content hash of {path} is not the one this run read: the data "
+            "this run trained on no longer exists at that path (regenerate it "
+            "from the run's config.yaml, or point processed_path= at a copy)"
+        )
+    frames = apply_splits(pd.read_parquet(path), load_splits(run_dir))
+    features = metadata["feature_columns"]
+    target = metadata["target_columns"][0]
+    return (
+        {name: frame[features] for name, frame in frames.items()},
+        {name: frame[target] for name, frame in frames.items()},
+    )
 
 
 def overlap_check(splits: dict[str, list[str]]) -> None:

@@ -11,12 +11,14 @@ only read path - nothing globs directories:
 reads metadata first and never guesses at filenames.
 """
 
+import hashlib
 import json
 import logging
 import platform
 import subprocess
 import sys
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -25,6 +27,26 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 DEFAULT_TZ = "Asia/Singapore"
+ENVIRONMENT_FILENAME = "environment.json"
+
+# Distribution names, curated rather than a full freeze: the file is meant
+# to be read. Anything absent (an optional extra this project never
+# installed) is left out rather than recorded as null.
+RECORDED_PACKAGES = (
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "pydantic",
+    "hydra-core",
+    "mlflow",
+    "joblib",
+    "matplotlib",
+    "lightgbm",
+    "xgboost",
+    "torch",
+    "optuna",
+    "shap",
+)
 
 
 def generate_timestamp(tz: str = DEFAULT_TZ) -> str:
@@ -186,6 +208,21 @@ def validate_feature_columns(metadata: dict, expected: list[str] | None) -> list
 # ----------------------------------------------------------- provenance
 
 
+def file_fingerprint(path: str | Path, chunk_size: int = 1 << 20) -> str:
+    """sha256 over a file's bytes: the content identity of an input table.
+
+    Truncated to 16 hex like ``core.splits.fingerprint``, so a split
+    fingerprint and a data fingerprint read alike side by side in a params
+    table. Read in chunks because the model-input table is the one file in
+    a run that is allowed to be large.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()[:16]
+
+
 def get_git_info() -> dict:
     """Best-effort git provenance; 'N/A' values outside a repo."""
 
@@ -216,6 +253,30 @@ def get_environment_info() -> dict:
         except ImportError:
             pass
     return info
+
+
+def record_environment(run_dir: str | Path) -> Path:
+    """Write ``environment.json``: the interpreter and the versions that ran.
+
+    The companion to the git commit and the config snapshot - those pin
+    the code and the knobs, this pins what the code was run against, which
+    is the remaining reason a rerun of a pinned run can still disagree
+    (a solver default, a serialisation format, a fitted-model pickle).
+
+    Distribution names rather than import names, resolved through
+    ``importlib.metadata``, so the file lists what a ``uv sync`` would have
+    to install; the inline block in ``metadata.json`` stays a glance-level
+    summary keyed the way the imports are.
+    """
+    packages = {}
+    for name in RECORDED_PACKAGES:
+        try:
+            packages[name] = version(name)
+        except PackageNotFoundError:
+            continue
+    path = Path(run_dir) / ENVIRONMENT_FILENAME
+    _write_json(path, {"python": sys.version.split()[0], "packages": packages})
+    return path
 
 
 # ------------------------------------------------------------- snapshots
