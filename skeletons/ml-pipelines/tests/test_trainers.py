@@ -32,17 +32,31 @@ from conftest import (
 from PROJECT.core.run_artifacts import save_metadata
 from PROJECT.pipelines.training_pipeline import build_trainer, get_trainer_class
 from PROJECT.pipelines.training_pipeline.classes import TRAINERS
-from PROJECT.schemas import TrainerConfig
+from PROJECT.pipelines.training_pipeline.classes.base_trainer import resolve_tune_metric
+from PROJECT.schemas import ChoiceSpace, FloatSpace, IntSpace, ParamSpace, TrainerConfig
 
 needs_tune = needs("optuna", reason="the 'tune' extra")
 
 TRAINER_SPECS = trainer_params()
 
-# Everything except torch: the base *tuner* scores through sklearn's
-# cross_validate, which needs a sklearn-shaped estimator - and TorchTrainer
-# deliberately refuses to fake one, overriding the tuner instead. Procedure
-# cross-validation is not on this list: every family has it (R1.11).
-SKLEARN_API_SPECS = [p for p in TRAINER_SPECS if p.id != "torch"]
+# Every family owns its tuner, so every family belongs in the tuner suite -
+# except torch, and only for runtime: one of its trials is a full epoch loop.
+# TestTorchOverrides exercises torch's own tuner instead.
+TUNER_SPECS = [p for p in TRAINER_SPECS if p.id != "torch"]
+
+# The methods a family must write in its own class body. Everything a
+# trainer does to a model is here, which is the readability contract: the
+# file answers "what does this family do?" without hopping up a hierarchy.
+OWN_ML_METHODS = (
+    "train",
+    "predict",
+    "predict_proba",
+    "evaluate",
+    "hyperparameter_tune",
+    "save",
+    "load",
+    "log_model",
+)
 
 
 def _build(spec: dict, features: dict, *, cv_mode: str = "stratified", **overrides):
@@ -161,6 +175,36 @@ class TestContract:
         )
         assert isinstance(cls.uses_val_in_fit, bool)
 
+    def test_declares_its_own_ml_methods(self, spec):
+        """Everything model-shaped is written in the family's own class body.
+
+        Same ``__dict__`` check as the protocol flag above, for the same
+        reason: inheriting ``evaluate`` or a shared sweeper is how a family
+        ends up being scored - or searched - by machinery nobody reading its
+        file would know was there.
+        """
+        cls = get_trainer_class(spec["kind"])
+        inherited = [name for name in OWN_ML_METHODS if name not in cls.__dict__]
+        assert not inherited, (
+            f"{cls.__name__} inherits {inherited} instead of declaring them; "
+            "a trainer file must read top-to-bottom on its own"
+        )
+
+    def test_declares_its_own_search_space(self, spec):
+        """``TUNABLE`` is the family's declared search space, not a default.
+
+        What a family searches over is part of what it is, so there is
+        nothing sensible to inherit - and the ranges have to be readable
+        beside the constructor they are ranges *for*.
+        """
+        cls = get_trainer_class(spec["kind"])
+        assert "TUNABLE" in cls.__dict__, (
+            f"{cls.__name__} must declare TUNABLE in its own class body: "
+            "which of its parameters are worth searching, over what ranges?"
+        )
+        assert cls.TUNABLE, f"{cls.__name__}.TUNABLE is empty"
+        assert all(isinstance(entry, ParamSpace) for entry in cls.TUNABLE.values())
+
     def test_a_family_that_ignores_val_really_ignores_it(self, spec, features, xy):
         """The flag is a promise about ``train``, so ``train`` must keep it.
 
@@ -276,8 +320,15 @@ class TestFoldStoppingSubsets:
             assert call["X"].index.max() < call["X_val"].index.min()
 
 
-@pytest.mark.parametrize("spec", SKLEARN_API_SPECS)
-class TestBaseTuner:
+@pytest.mark.parametrize("spec", TUNER_SPECS)
+class TestFamilyTuners:
+    """Each family's own tuner, asserted through the one shared contract.
+
+    There is no shared sweeper any more - the base only fixes the signature
+    and these postconditions - so this suite is what keeps five separately
+    written searches from drifting into five different promises.
+    """
+
     @needs_tune
     def test_tune_applies_its_winners_to_the_next_train(self, spec, features, xy):
         X_train, y_train, X_val, y_val = xy
@@ -330,8 +381,120 @@ class TestPerFamilySpaces:
         forest = _build(RANDOM_FOREST_TRAINER, features)
         linear = _build(LOGREG_TRAINER, features)
         trial = _StubTrial()
-        assert "max_features" in forest._get_param_space(trial)
-        assert "max_features" not in linear._get_param_space(trial)
+        assert "max_features" in forest._get_param_space(trial, forest._merged_space())
+        assert "max_features" not in linear._get_param_space(
+            trial, linear._merged_space()
+        )
+
+
+class TestConfigurableSpaces:
+    """``tune.space``: narrow a family's declared range, or drop a name.
+
+    A declared default range is a starting point, not a decision - the
+    analyst who knows this dataset has to be able to say "search max_depth
+    between 4 and 6" or "leave max_depth alone" without editing a shipped
+    trainer file.
+    """
+
+    def test_an_override_narrows_only_what_it_names(self, features):
+        trainer = _build(RANDOM_FOREST_TRAINER, features)
+        space = trainer._merged_space({"max_depth": IntSpace(low=4, high=6)})
+
+        assert (space["max_depth"].low, space["max_depth"].high) == (4, 6)
+        declared = get_trainer_class("random_forest").TUNABLE
+        assert space["n_estimators"] == declared["n_estimators"]
+
+    def test_a_partial_override_keeps_the_declared_scale(self, features):
+        """Narrowing a range must not silently reset how it is sampled.
+
+        ``C`` is declared log-scaled; an override that mentions only the
+        bounds is answering a different question, and a dumb dict merge
+        would answer both.
+        """
+        trainer = _build(LOGREG_TRAINER, features)
+        space = trainer._merged_space({"C": FloatSpace(low=0.1, high=1.0)})
+
+        assert (space["C"].low, space["C"].high) == (0.1, 1.0)
+        assert space["C"].log is True
+
+    def test_disabling_a_name_takes_it_out_of_the_search(self, features):
+        trainer = _build(RANDOM_FOREST_TRAINER, features)
+        space = trainer._merged_space({"max_depth": False})
+
+        assert "max_depth" not in space
+        # And nothing downstream special-cases it: the suggestion simply
+        # never happens, so `params` keeps whatever was configured.
+        assert "max_depth" not in trainer._get_param_space(_StubTrial(), space)
+
+    @needs_tune
+    def test_a_disabled_name_is_absent_from_the_winners(self, features, xy):
+        trainer = _build(RANDOM_FOREST_TRAINER, features)
+        best = trainer.hyperparameter_tune(
+            xy[0], xy[1], n_trials=2, cv=2, space={"max_depth": False}
+        )
+        assert best and "max_depth" not in best
+        assert trainer.params["max_depth"] == RANDOM_FOREST_TRAINER["params"]["max_depth"]
+
+    def test_an_unknown_name_lists_what_the_family_tunes(self, features):
+        trainer = _build(RANDOM_FOREST_TRAINER, features)
+        with pytest.raises(ValueError, match="min_samples_leaf"):
+            trainer._merged_space({"n_leaves": IntSpace(low=1, high=2)})
+
+    def test_a_wrong_kind_of_range_names_the_declared_one(self, features):
+        # A list of choices where an integer range was declared: half-applying
+        # it would search something nobody wrote down.
+        trainer = _build(RANDOM_FOREST_TRAINER, features)
+        with pytest.raises(ValueError, match="IntSpace"):
+            trainer._merged_space({"max_depth": ChoiceSpace(choices=[3, 5])})
+
+    @needs_tune
+    def test_a_pooled_trial_is_scored_by_the_familys_own_procedure_cv(
+        self, features, xy, monkeypatch
+    ):
+        """Two trials, two folds each, and no fold fit is handed a val split."""
+        calls = _spy_on_fold_fits(monkeypatch, "random_forest")
+        trainer = _build(RANDOM_FOREST_TRAINER, features)
+        trainer.hyperparameter_tune(xy[0], xy[1], n_trials=2, cv=2)
+
+        assert len(calls) == 2 * 2
+        assert all(call["X_val"] is None for call in calls)
+
+    @needs_tune
+    @needs_trainer("lightgbm")
+    def test_a_standing_val_trial_early_stops_on_a_carved_holdout(
+        self, features, xy, monkeypatch
+    ):
+        """One fit per trial, each with the referee its real fit would have.
+
+        ``cv=2`` is passed and deliberately not honoured: this family's
+        search carves a holdout instead, and two trials must therefore mean
+        two fits, not four.
+        """
+        calls = _spy_on_fold_fits(monkeypatch, "lightgbm")
+        trainer = _build(LIGHTGBM_TRAINER, features)
+        trainer.hyperparameter_tune(xy[0], xy[1], n_trials=2, cv=2)
+
+        assert len(calls) == 2
+        for call in calls:
+            assert call["X_val"] is not None, "the trial fit got no referee"
+            rows = len(call["X"]) + len(call["X_val"])
+            assert len(call["X_val"]) / rows == pytest.approx(0.2, abs=0.02)
+            # Disjoint from the rows fitted on - a referee inside the fit is
+            # not a referee.
+            assert not set(call["X"].index) & set(call["X_val"].index)
+
+    def test_an_error_metric_is_minimised_rather_than_maximised(self):
+        """A null ``direction`` is inferred, never defaulted to maximize.
+
+        ``metric: rmse`` with the direction left alone must not quietly
+        search for the worst model in the space.
+        """
+        assert resolve_tune_metric("regression", None, None) == ("rmse", "minimize")
+        assert resolve_tune_metric("regression", "mae", None)[1] == "minimize"
+        assert resolve_tune_metric("classification", "accuracy", None)[1] == "maximize"
+        # An explicit direction still wins, which is what lets a custom
+        # metric be optimised at all.
+        assert resolve_tune_metric("regression", "rmse", "maximize")[1] == "maximize"
 
 
 class TestBoosterEarlyStopping:
@@ -448,16 +611,12 @@ class TestBoosterHistoryShape:
 
 
 class TestTorchOverrides:
-    """Where TorchTrainer departs from the base's sklearn machinery."""
+    """TorchTrainer's own tuner, and the fold twin its harness needs.
 
-    @needs_trainer("torch")
-    def test_the_sklearn_cv_estimator_is_still_refused(self, features):
-        # Only the sklearn-scored tuner path asks for one, and a torch module
-        # is not a sklearn estimator. Cross-validation no longer comes
-        # through here: it runs the epoch loop per fold (R1.11).
-        trainer = _build(TORCH_TRAINER, features)
-        with pytest.raises(NotImplementedError, match="sklearn"):
-            trainer._cv_estimator()
+    Excluded from ``TestFamilyTuners`` only for runtime, so its tuner is
+    asserted here instead - including the one thing no other family has to
+    do, routing a winner to two destinations.
+    """
 
     @needs_trainer("torch")
     def test_a_fold_trainer_drops_the_real_run_s_harness_knobs(self, features):
@@ -572,24 +731,20 @@ def test_every_registered_kind_has_a_config_group_file():
     assert declared == set(TRAINERS)
 
 
-def test_the_plumbing_bases_decide_no_protocol():
-    """Only a family may answer "does my fit use val?" - never a base class.
+def test_the_base_decides_no_protocol_and_no_space():
+    """Only a family may say what its fit reads and what it searches over.
 
-    ``BaseTrainer`` annotates the flag without defaulting it, and the two
-    shared-plumbing classes stay silent, so a new trainer that forgets it
-    fails ``test_declares_its_own_fit_protocol`` instead of inheriting a
-    protocol by accident.
+    ``BaseTrainer`` annotates both without defaulting either - and there is
+    no intermediate class left to smuggle a default in - so a new trainer
+    that forgets one fails its ``__dict__`` contract test above rather than
+    inheriting an answer nobody chose.
     """
     from PROJECT.pipelines.training_pipeline.classes.base_trainer import BaseTrainer
-    from PROJECT.pipelines.training_pipeline.classes.sklearn_common import (
-        PipelineArtifactTrainer,
-        SklearnEstimatorTrainer,
-    )
 
-    for cls in (BaseTrainer, PipelineArtifactTrainer, SklearnEstimatorTrainer):
-        assert "uses_val_in_fit" not in cls.__dict__
-    with pytest.raises(AttributeError):
-        BaseTrainer.uses_val_in_fit
+    for name in ("uses_val_in_fit", "TUNABLE"):
+        assert name not in BaseTrainer.__dict__
+        with pytest.raises(AttributeError):
+            getattr(BaseTrainer, name)
 
 
 def test_the_contract_suite_covers_every_registered_family():

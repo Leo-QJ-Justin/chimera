@@ -6,19 +6,41 @@ cannot carry. The difference from LightGBM is in the wiring -
 ``early_stopping_rounds`` is a *constructor* argument in xgboost >= 1.6,
 not a fit argument or a callback, and setting it without an ``eval_set``
 raises. So it is attached in :meth:`train`, only once there is something
-to stop on, which also leaves ``_build_model`` usable for the base's CV
-and tuning paths.
+to stop on, which also leaves ``_build_model`` usable for the CV and
+tuning paths.
+
+Cross-validation and tuning both give a fit its referee rather than doing
+without one: a CV fold carves a stopping subset out of its own training
+rows (R1.11), and the search carves one holdout up front that every trial
+early-stops against and is then scored on. So a tuned ``n_estimators`` is
+the ceiling a trial stopped short of, not a round count anyone trained to
+the end.
 """
 
 import logging
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, ClassVar
 
+import joblib
+import numpy as np
 import pandas as pd
+from sklearn.pipeline import Pipeline
 
+from ....schemas import FloatSpace, IntSpace, ParamSpace
+from ...evaluation_pipeline.modules.metrics import compute_metrics
 from ..modules.history import booster_history
 from ..modules.model_logging import log_flavor_model
-from .sklearn_common import PipelineArtifactTrainer
+from .base_trainer import (
+    TUNE_HOLDOUT_FRACTION,
+    BaseTrainer,
+    _import_optuna,
+    resolve_tune_metric,
+)
 
 logger = logging.getLogger(__name__)
+
+MODEL_FILENAME = "model.joblib"
 
 
 def _import_xgboost():
@@ -33,7 +55,7 @@ def _import_xgboost():
     return xgboost
 
 
-class XGBoostTrainer(PipelineArtifactTrainer):
+class XGBoostTrainer(BaseTrainer):
     """Gradient-boosted trees with validation-driven early stopping.
 
     Args:
@@ -48,6 +70,18 @@ class XGBoostTrainer(PipelineArtifactTrainer):
     # Early stopping reads the validation curve during the fit, so val must
     # stay outside the training data: standing-val protocol (R1.10).
     uses_val_in_fit = True
+
+    # Defaults for the search; `trainer.tune.space` narrows any of them and
+    # `false` drops one, leaving whatever `params` configured.
+    TUNABLE: ClassVar[dict[str, ParamSpace]] = {
+        # xgboost's `eta`, under the sklearn API's name for it.
+        "learning_rate": FloatSpace(low=0.01, high=0.3, log=True),
+        "max_depth": IntSpace(low=2, high=10),
+        "subsample": FloatSpace(low=0.6, high=1.0),
+        "colsample_bytree": FloatSpace(low=0.6, high=1.0),
+        "min_child_weight": IntSpace(low=1, high=20),
+        "n_estimators": IntSpace(low=50, high=500, step=50),
+    }
 
     def __init__(
         self,
@@ -75,16 +109,8 @@ class XGBoostTrainer(PipelineArtifactTrainer):
         )
         return booster(random_state=self.seed, **self.params)
 
-    def _get_param_space(self, trial) -> dict:
-        return {
-            # xgboost's `eta`, under the sklearn API's name for it.
-            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
-            "max_depth": trial.suggest_int("max_depth", 2, 10),
-            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
-            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
-            "min_child_weight": trial.suggest_int("min_child_weight", 1, 20),
-            "n_estimators": trial.suggest_int("n_estimators", 50, 500, step=50),
-        }
+    def _get_param_space(self, trial, space: dict) -> dict:
+        return {name: entry.suggest(trial, name) for name, entry in space.items()}
 
     def train(
         self,
@@ -130,6 +156,123 @@ class XGBoostTrainer(PipelineArtifactTrainer):
         )
         return self
 
+    def assemble(self, preprocessor, booster) -> None:
+        """Store the two already-fitted halves as the one artifact.
+
+        Constructing a ``Pipeline`` does not refit its steps, so this is
+        storage, not training - which is the whole reason the halves could
+        be fitted separately in the first place.
+        """
+        self.model = Pipeline([("preprocess", preprocessor), ("model", booster)])
+        self.fitted = True
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        self.check_fitted()
+        return np.asarray(self.model.predict(self.align(X)))
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray | None:
+        self.check_fitted()
+        if self.task == "regression":
+            return None
+        return np.asarray(self.model.predict_proba(self.align(X)))
+
+    @property
+    def classes_(self) -> np.ndarray | None:
+        return None if self.model is None else getattr(self.model, "classes_", None)
+
+    def evaluate(
+        self, X: pd.DataFrame, y, metrics: list[str | Callable] | None = None
+    ) -> dict[str, float]:
+        """Score a frame with the project's metric definitions."""
+        self.check_fitted()
+        return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
+
+    def hyperparameter_tune(
+        self,
+        X: pd.DataFrame,
+        y,
+        n_trials: int = 100,
+        cv: int | Any = 5,
+        metric: str | None = None,
+        direction: str | None = None,
+        space: dict | None = None,
+        **optuna_kwargs,
+    ) -> dict:
+        """Optuna over one carved holdout, which every trial early-stops on.
+
+        One holdout is carved off the search frames up front (the
+        chronological tail under ``cv_mode: temporal``), and each trial
+        trains a candidate against it and is then scored on it through
+        :meth:`evaluate`. That is this family's real procedure: a booster
+        without a referee trains its full ``n_estimators``, so a k-fold
+        search would rank candidates by a fit shaped unlike the one the run
+        ships. ``cv`` is therefore **not read here** - it still sets the fold
+        count of the selection CV under ``selection.basis: cv``.
+
+        Known bias: trials are scored on the same rows they early-stopped
+        against, so the winning score is optimistic. The honest number
+        remains the training pipeline's untouched test split.
+
+        Args:
+            n_trials: Optuna trials; each costs one early-stopped fit.
+            cv: Ignored by this search (see above).
+            metric: A project metric alias; None -> the task default.
+            direction: None -> inferred from the metric.
+            space: ``trainer.tune.space`` overrides of :attr:`TUNABLE`.
+
+        Returns:
+            The best parameters found, already folded into ``params``.
+
+        Raises:
+            ImportError: If optuna is not installed.
+        """
+        optuna = _import_optuna()
+        metric, direction = resolve_tune_metric(self.task, metric, direction)
+        merged = self._merged_space(space)
+        X_fit, y_fit, X_stop, y_stop = self._carve_stopping_subset(
+            self.align(X), np.asarray(y), TUNE_HOLDOUT_FRACTION
+        )
+        logger.info(
+            "Tuning %s over %d trials: %s (%s), %d rows fitted against a "
+            "%d-row holdout per trial, searching %s",
+            self.model_type,
+            n_trials,
+            metric,
+            direction,
+            len(X_fit),
+            len(X_stop),
+            sorted(merged),
+        )
+
+        def objective(trial) -> float:
+            resolved = self._get_param_space(trial, merged)
+            # Recorded on the trial rather than left to study.best_params,
+            # which holds only what Optuna itself suggested - the two agree
+            # for this family and would silently stop agreeing the day the
+            # space derives anything.
+            trial.set_user_attr("resolved_params", resolved)
+            candidate = self.fresh()
+            candidate.params.update(resolved)
+            candidate.train(X_fit, y_fit, X_stop, y_stop)
+            return candidate.evaluate(X_stop, y_stop, metrics=[metric])[metric]
+
+        study = optuna.create_study(direction=direction, **optuna_kwargs)
+        # show_progress_bar is off: the bar writes to stderr and interleaves
+        # with the run's log file, which is the thing anyone reads afterwards.
+        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+
+        self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
+        self.params.update(self.best_params)
+        logger.info(
+            "Tuned %s over %d trials: best %s=%.6f with %s",
+            self.model_type,
+            n_trials,
+            metric,
+            study.best_value,
+            self.best_params,
+        )
+        return self.best_params
+
     def training_summary(self) -> dict:
         return {
             "best_iteration": self.best_iteration,
@@ -142,6 +285,38 @@ class XGBoostTrainer(PipelineArtifactTrainer):
         if self.best_iteration is not None:
             params["best_iteration"] = self.best_iteration
         return params
+
+    @property
+    def estimator(self):
+        """The bare fitted booster inside the artifact."""
+        return self.model.named_steps["model"]
+
+    @property
+    def preprocessor(self):
+        """The fitted preprocessor half of the artifact.
+
+        Named as every other family names it, so post-fit diagnostics can
+        ask any trainer for its transformer without branching on which one
+        it got.
+        """
+        return self.model.named_steps["preprocess"]
+
+    def transformed(self, X: pd.DataFrame):
+        """``X`` aligned and pushed through the fitted preprocessor."""
+        return self.preprocessor.transform(self.align(X))
+
+    def save(self, run_dir: str | Path) -> dict[str, str]:
+        self.check_fitted()
+        joblib.dump(self.model, Path(run_dir) / MODEL_FILENAME)
+        return {"model": MODEL_FILENAME}
+
+    @classmethod
+    def load(cls, run_dir: str | Path) -> "XGBoostTrainer":
+        run_dir = Path(run_dir)
+        trainer = cls.from_spec(cls.read_spec(run_dir))
+        trainer.model = joblib.load(run_dir / cls.read_files(run_dir)["model"])
+        trainer.fitted = True
+        return trainer
 
     def log_model(self, tracker, input_example=None) -> None:
         """The bare booster, in the ``mlflow.xgboost`` flavor.

@@ -395,7 +395,7 @@ defaulting it, and the contract suite requires it in the family's own
 | | **A: pooled** (`uses_val_in_fit = False`) | **B: standing val** (`uses_val_in_fit = True`) |
 |---|---|---|
 | Families | `logreg`, `random_forest` | `lightgbm`, `xgboost`, `torch` |
-| Tuning folds over | train+val pooled | train (torch: holdout per trial) |
+| Tuning folds over | train+val pooled | holdout per trial (carved off train) |
 | Final fit on | train+val pooled | train, early-stopping on val |
 | Selection number | k-fold CV estimate on the pool, `cv_<metric>` | `<selection.split>_<metric>` |
 | Metrics published | `dev_*` (in-sample on the pool), `test_*`, `cv_*` | `train_*`, `val_*`, `test_*` |
@@ -500,6 +500,88 @@ tunes, outer loop estimates) is the unbiased answer (Varma & Simon 2006);
 the honest cheap alternative is to compare *untuned* candidates, or to
 give every candidate the same search budget and treat the ranking as
 indicative. Test remains untouched under all of it.
+
+**R1.12 (follow-up, 2026-08-01): each family is self-contained, tuner
+included, and its search space is declared data.** R1.10 and R1.11 left the
+trainers correct and hard to read. Shared behaviour had spread across three
+inheritance layers — `evaluate` lived three hops above `logreg_trainer.py`
+— and tuning ran in two vocabularies at once: sklearn *scoring strings*
+through a cloned sklearn pipeline for four families, project *metric
+aliases* through a private override for torch. Neither is a bug; both make
+the answer to "what does this family actually do?" un-followable inside the
+file that is supposed to answer it.
+
+*The principle: a trainer file reads top to bottom.* The intermediate
+classes are gone. Every family is `BaseTrainer → FamilyTrainer` and writes
+`train`, `predict`, `predict_proba`, `evaluate`, `hyperparameter_tune`,
+`save`, `load` and `log_model` in its own class body — enforced the same
+way `uses_val_in_fit` is, by a contract test that checks the family's own
+`__dict__`. Sibling near-duplication (four joblib save/load pairs, five
+three-line `evaluate`s) is the accepted price and the deliberate one: the
+alternative is a file that cannot be read without the two above it.
+
+The base keeps only what must be identical for numbers to be comparable
+across families — `cross_validate` (R1.11), `_carve_stopping_subset`, the
+spec round-trip and `align` — plus three pieces of shared *data*:
+`TUNE_DEFAULT` (task → metric alias + direction), `TUNE_HOLDOUT_FRACTION`,
+and `_merged_space`, which is the config contract rather than anyone's
+search.
+
+*Per-family tuners, scoring the procedure that ships.* `hyperparameter_tune`
+is now abstract: the base fixes the signature and the postconditions (set
+`best_params`, fold the winners into the family's own config, return them)
+and nothing else. There is no shared sweeper and no hook to fill in —
+a future family may use grid search, or a library that is not Optuna, and
+the contract does not care. Every trial is scored in project metric
+aliases, through the family's own `evaluate`:
+
+- **Pooled families** (`logreg`, `random_forest`) score a trial by the
+  procedure-level `cross_validate` of R1.11, over the frames the search was
+  handed. A trial's number is therefore literally the number `best.json`
+  will hold.
+- **Standing-val families** (`lightgbm`, `xgboost`, `torch`) carve one 20%
+  holdout up front — the chronological tail under `cv_mode: temporal`, via
+  the same carve CV folds use — and each trial early-stops against it and is
+  scored on it. `cv` is not read by these searches, and each says so.
+
+*Intended behaviour change.* Booster trials used to train the full
+`n_estimators` because sklearn's `cross_validate` had no validation split to
+stop on; they now early-stop like every other fit of that family. A winning
+`n_estimators` is consequently a ceiling that was stopped short of rather
+than a round count trained to the end, and tuned booster runs will not
+reproduce historical ones. That is the point: a search that ranks candidates
+by a fit shaped unlike the one the run ships is ranking the wrong thing.
+
+Two accepted costs. A pooled family's search is `n_trials × cv` procedure
+fits, each of which logs its own "Cross-validating …" line, so a tuned run's
+log is noisier than it was — stated in the log rather than silenced, on the
+same principle as R1.11's fold costs. And a standing-val trial is scored on
+the rows it early-stopped against, so the winning score is optimistic; test
+remains untouched and remains the honest number.
+
+*Declarative search spaces.* Each family declares `TUNABLE: ClassVar[dict[str,
+ParamSpace]]` in its class body — the ranges beside the constructor they are
+ranges for — and `trainer.tune.space` overrides it per run. `IntSpace` /
+`FloatSpace` / `ChoiceSpace` are pydantic models with `extra="forbid"` (a
+typo in a range must not be silently dropped) and a duck-typed `suggest`, so
+the schema module never imports Optuna. Three behaviours: `false` drops a
+name from the search entirely and leaves `params` in charge of it; a range
+is merged **field-wise onto the declared one and re-validated as the declared
+kind**, so narrowing bounds keeps a declared `log: true` and a categorical
+list over a numeric range fails loudly; an unknown name raises, listing what
+the family does tune. `_get_param_space(trial, space)` suggests only from the
+merged table, and derived values (logreg's elasticnet penalty, torch's layer
+list from a width and a depth) are computed after the suggestions and
+survive through the existing `resolved_params` trial attribute.
+
+*Direction is inferred, not defaulted.* `tune.metric` is a project alias in
+the same vocabulary `selection.metric` uses (validated against the task, which
+also catches a leftover sklearn scoring string), and `tune.direction` defaults
+to null: the direction comes from `METRIC_DIRECTIONS` in the metrics module.
+A blanket maximize default would let `metric: rmse` search for the worst
+model in the space and still finish, still write a run, and still update a
+pointer. `cv_scoring` — the sklearn scorer bridge only the old sweeper used —
+is deleted with it.
 
 ## Build plan (next task, via /start-task)
 

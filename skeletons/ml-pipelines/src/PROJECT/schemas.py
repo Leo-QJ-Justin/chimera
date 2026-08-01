@@ -126,6 +126,74 @@ class BoosterConfig(BaseModel):
     log_period: int = 0
 
 
+class IntSpace(BaseModel):
+    """An integer range in a search space: ``{low, high, step, log}``."""
+
+    # Forbidden rather than ignored, unlike the composite sections above: a
+    # range is typed by hand into a trainer file, nothing composes extra keys
+    # into it, and it is what makes the ParamSpace union deterministic -
+    # `choices` can only ever be a ChoiceSpace.
+    model_config = {"extra": "forbid"}
+
+    low: int
+    high: int
+    step: int = 1
+    log: bool = False
+
+    @model_validator(mode="after")
+    def validate_log_scale(self):
+        """Optuna rejects a log-scaled integer range with a step; say so here."""
+        if self.log and self.step != 1:
+            raise ValueError(
+                f"log=true cannot be combined with step={self.step}: a "
+                "log-scaled integer range is sampled one value at a time"
+            )
+        return self
+
+    def suggest(self, trial, name: str):
+        """One value from this range, from an Optuna trial (duck-typed)."""
+        return trial.suggest_int(name, self.low, self.high, step=self.step, log=self.log)
+
+
+class FloatSpace(BaseModel):
+    """A float range in a search space: ``{low, high, step, log}``."""
+
+    model_config = {"extra": "forbid"}
+
+    low: float
+    high: float
+    # None -> continuous. A step and a log scale are mutually exclusive,
+    # which Optuna itself says at suggest time.
+    step: float | None = None
+    log: bool = False
+
+    def suggest(self, trial, name: str):
+        """One value from this range, from an Optuna trial (duck-typed)."""
+        return trial.suggest_float(
+            name, self.low, self.high, step=self.step, log=self.log
+        )
+
+
+class ChoiceSpace(BaseModel):
+    """An explicit list of candidate values, sampled categorically."""
+
+    model_config = {"extra": "forbid"}
+
+    # Untyped on purpose: a categorical range is a mix of strings, numbers
+    # and None as often as not ("sqrt" | "log2" | null for max_features).
+    choices: list
+
+    def suggest(self, trial, name: str):
+        """One value from this list, from an Optuna trial (duck-typed)."""
+        return trial.suggest_categorical(name, self.choices)
+
+
+# What one entry of `tune.space` may be. The trial is duck-typed through
+# `suggest`, so nothing here imports optuna: a search space is config, and
+# config must validate on a machine that never installed the 'tune' extra.
+ParamSpace = IntSpace | FloatSpace | ChoiceSpace
+
+
 class TuneConfig(BaseModel):
     """Optuna search, declared per trainer rather than per run.
 
@@ -138,12 +206,22 @@ class TuneConfig(BaseModel):
     enabled: bool = False
     n_trials: int = 20
     # Folds for the tuning CV. The *splitter* comes from split.mode (D9),
-    # never a hardcoded TimeSeriesSplit.
+    # never a hardcoded TimeSeriesSplit. Families whose fit needs a stopping
+    # referee score their trials on a carved holdout instead and ignore this.
     cv: int = 3
-    # A sklearn *scoring* string (not a metric-function name): "f1_macro",
-    # "accuracy", "r2", "neg_root_mean_squared_error". None -> task default.
+    # A *project metric alias* - the same vocabulary evaluate() and the
+    # evaluation report speak: "f1_macro", "accuracy", "rmse", "mae", "r2".
+    # Never a sklearn scoring string. None -> the task default.
     metric: str | None = None
-    direction: Literal["maximize", "minimize"] = "maximize"
+    # None -> inferred from the metric (error-like metrics minimize, the rest
+    # maximize), so `metric: rmse` left alone cannot silently search for the
+    # worst model.
+    direction: Literal["maximize", "minimize"] | None = None
+    # Per-parameter overrides of the family's own TUNABLE table: a range to
+    # narrow or widen one, `false` to drop the name from the search entirely
+    # (its `params` value then stands, as it does on an untuned run). A name
+    # the family does not tune raises, listing the ones it does.
+    space: dict[str, ParamSpace | Literal[False]] = {}
 
 
 class TrainerConfig(BaseModel):
@@ -367,6 +445,11 @@ class TrainingConfig(RunConfig):
     def validate_task_agreement(self):
         """The selection metric and the split mode must suit the task."""
         check_metric(self.selection.metric, self.task, "selection.metric")
+        if self.trainer.tune.metric is not None:
+            # Same vocabulary as selection.metric, checked for the same
+            # reason - and it also catches a sklearn scoring string left over
+            # from a config written against an older tuner.
+            check_metric(self.trainer.tune.metric, self.task, "trainer.tune.metric")
         if self.task == "regression" and self.split.mode == "stratified":
             # sklearn's own error for this ("least populated class has 1
             # member") names every distinct target value and explains nothing.

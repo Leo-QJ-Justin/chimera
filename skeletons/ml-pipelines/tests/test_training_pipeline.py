@@ -31,7 +31,6 @@ from PROJECT.core.run_artifacts import (
 )
 from PROJECT.core.splits import load_splits
 from PROJECT.pipelines.training_pipeline import TrainingPipeline, get_trainer_class
-from PROJECT.pipelines.training_pipeline.classes.base_trainer import BaseTrainer
 
 
 def _sidecar_metrics(run_dir) -> set[str]:
@@ -42,16 +41,21 @@ def _sidecar_metrics(run_dir) -> set[str]:
     return {k for r in records if r["type"] == "metrics" for k in r["metrics"]}
 
 
-def _spy_on_tuning(monkeypatch) -> dict:
-    """Record how many rows the search was handed, then run it for real."""
+def _spy_on_tuning(monkeypatch, kind: str) -> dict:
+    """Record how many rows the search was handed, then run it for real.
+
+    Patched on the family's own class, because that is where a tuner lives
+    now - the base only declares the signature.
+    """
     seen: dict = {}
-    original = BaseTrainer.hyperparameter_tune
+    trainer_cls = get_trainer_class(kind)
+    original = trainer_cls.hyperparameter_tune
 
     def spy(self, X, y, **kwargs):
         seen["rows"] = len(X)
         return original(self, X, y, **kwargs)
 
-    monkeypatch.setattr(BaseTrainer, "hyperparameter_tune", spy)
+    monkeypatch.setattr(trainer_cls, "hyperparameter_tune", spy)
     return seen
 
 
@@ -302,7 +306,7 @@ class TestProtocols:
     ):
         """The tuner is handed the pool, which is the whole point of R1.10."""
         pytest.importorskip("optuna", reason="needs the 'tune' extra")
-        searched = _spy_on_tuning(monkeypatch)
+        searched = _spy_on_tuning(monkeypatch, "random_forest")
         trainer = {
             **RANDOM_FOREST_TRAINER,
             "tune": {"enabled": True, "n_trials": 2, "cv": 2},
@@ -331,7 +335,7 @@ class TestProtocols:
         self, tmp_path, processed_file, monkeypatch
     ):
         pytest.importorskip("optuna", reason="needs the 'tune' extra")
-        searched = _spy_on_tuning(monkeypatch)
+        searched = _spy_on_tuning(monkeypatch, "lightgbm")
         trainer = {**LIGHTGBM_TRAINER, "tune": {"enabled": True, "n_trials": 2, "cv": 2}}
         run_dir, _ = self._run(tmp_path, processed_file, trainer)
 
@@ -593,3 +597,26 @@ class TestTuning:
         # model rather than the configured one.
         for key, value in spec["best_params"].items():
             assert spec["params"][key] == value
+
+    def test_a_disabled_space_entry_is_left_to_the_config(self, tmp_path, processed_file):
+        """``tune.space: {max_depth: false}`` takes one knob out of the search.
+
+        The end-to-end half of the search-space contract: what the config
+        pinned must survive the run and never appear among the winners.
+        """
+        pytest.importorskip("optuna", reason="needs the 'tune' extra")
+        trainer = {
+            **RANDOM_FOREST_TRAINER,
+            "tune": {
+                "enabled": True,
+                "n_trials": 2,
+                "cv": 2,
+                "space": {"max_depth": False},
+            },
+        }
+        config = make_training_config(tmp_path, processed_file, trainer)
+        run_dir = TrainingPipeline(config).run()
+
+        spec = load_metadata(run_dir)["hyperparameters"]
+        assert spec["best_params"] and "max_depth" not in spec["best_params"]
+        assert spec["params"]["max_depth"] == RANDOM_FOREST_TRAINER["params"]["max_depth"]

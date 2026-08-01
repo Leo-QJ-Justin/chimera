@@ -89,7 +89,7 @@ trainer's own `uses_val_in_fit` flag:
 | | **pooled** (`uses_val_in_fit = False`) | **standing val** (`uses_val_in_fit = True`) |
 |---|---|---|
 | Families | `logreg`, `random_forest` | `lightgbm`, `xgboost`, `torch` |
-| Tuning folds over | train+val pooled | train (torch: a holdout per trial) |
+| Tuning scores a trial on | a procedure CV over train+val pooled | a 20% holdout carved off train, which the trial early-stops against |
 | Final fit | train+val pooled, no val argument | train, early-stopping on val |
 | `best.json` records | `cv_<metric>` — a k-fold estimate on the pool | `<selection.split>_<metric>` |
 | Metrics published | `dev_*`, `test_*`, `cv_*` | `train_*`, `val_*`, `test_*` |
@@ -225,19 +225,25 @@ a line and is skipped.
 
 ## The trainer contract
 
-`training_pipeline/classes/base_trainer.py`. Subclasses implement two
-hooks and two methods; the base gives them three services for free.
+`training_pipeline/classes/base_trainer.py`. The base is deliberately
+thin: it fixes the contract and the few services that must be identical
+across families for their numbers to be comparable. Everything a trainer
+does to a model — `evaluate` and `hyperparameter_tune` included — is
+written in that family's own class body, so a trainer file reads top to
+bottom without hopping up a hierarchy. Sibling near-duplication is the
+accepted price for that.
 
 | Member | Who writes it | Why |
 |---|---|---|
 | `_build_model()` | subclass | A **fresh**, seeded, unfitted estimator. Called per train, per CV fold, per tuning trial — a shared object is what makes cross-validation dishonest. |
-| `_get_param_space(trial)` | subclass | That family's own Optuna space, in the estimator's own parameter names. |
+| `TUNABLE` | subclass, always | That family's search space as declared data — parameter name → default range — sitting beside the constructor those ranges are for. `trainer.tune.space` narrows any of them per run, or drops one with `false`. Annotated without a default for the same reason `uses_val_in_fit` is. |
+| `_get_param_space(trial, space)` | subclass | One trial's parameters, suggested define-by-run from the merged space, plus any value derived from a suggestion (a solver's penalty, a layer list from a width and a depth). |
 | `train(X, y, X_val, y_val)` | subclass | Validation data is in the *signature* because three of the five trainers need it during the fit. |
 | `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It picks the run's protocol (above), so the base annotates it without defaulting it and every family states its own — a new trainer that omits it fails the contract suite rather than inheriting a protocol nobody chose. |
 | `predict` / `predict_proba` | subclass / optional | `predict_proba` returns None when the family has none, rather than faking probabilities. |
-| `evaluate(X, y, metrics=…)` | **base** | So no family scores itself with its own metric definition. |
+| `evaluate(X, y, metrics=…)` | subclass, always | Three identical lines per family (`check_fitted`, then `compute_metrics` over its own predictions) and nothing inherited. The definitions still come from one place — `evaluation_pipeline/modules/metrics.py` — so no family scores itself with its own metric, but the measurement is visible in the file whose predictions it measures. |
 | `cross_validate(X, y, cv, metrics)` | **base** | A fresh **trainer** per fold running this family's real `train` — including, for a family that early-stops, a stopping subset carved out of that fold's own rows (R1.11). The splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
-| `hyperparameter_tune(...)` | **base** | Optuna over `_get_param_space`; winners are folded into `params` so the next `train` actually uses them. |
+| `hyperparameter_tune(...)` | subclass, always | Abstract on the base and abstract *only* — no shared sweeper, no hooks. Every trial is scored by the procedure the family actually ships (pooled families through `cross_validate`, standing-val families on a carved 20% holdout their trials early-stop against), in project metric aliases. Winners are folded into `params` so the next `train` actually uses them. |
 | `log_model(tracker, example)` | subclass | The fitted model in that family's own MLflow flavor. See below. |
 | `save(run_dir) → files map` | subclass | Returns `{kind: filename}` verbatim for `metadata.json`. Filenames, never paths. |
 | `load(run_dir)` | subclass | **Metadata-first**: read `metadata.json`, check the recorded `model_class`, rebuild from the spec, then load weights. Config files are never consulted — they may have moved on. |
@@ -257,15 +263,15 @@ lookup table has nowhere to put that.
 | `random_forest` | `RandomForestTrainer` | — | Classifier or regressor from the run's `task`. The shipped default. |
 | `lightgbm` | `LightGBMTrainer` | `lightgbm` | Its own fit path: `eval_set` early stopping needs the *transformed* validation matrix, which a `Pipeline`'s fit signature cannot carry. |
 | `xgboost` | `XGBoostTrainer` | `xgboost` | Same reason, different wiring — `early_stopping_rounds` is a constructor argument and raises without an `eval_set`, so it is attached only when there is a validation split. |
-| `torch` | `TorchTrainer` | `torch` | The DL harness (epoch loop, early stopping, `ReduceLROnPlateau`, NaN guard, checkpointing, device pinning, overfit-one-batch check) as internals in `modules/`. Overrides `hyperparameter_tune` (a holdout per trial, not k-fold: there is no sklearn estimator to hand a scorer). Cross-validates like every other family — the base runs its epoch loop per fold. |
+| `torch` | `TorchTrainer` | `torch` | The DL harness (epoch loop, early stopping, `ReduceLROnPlateau`, NaN guard, checkpointing, device pinning, overfit-one-batch check) as internals in `modules/`. Its tuner is the one whose winners have two destinations: `params__*` keys change the checkpoint's shapes, `options__*` keys change what the loop does. Cross-validates like every other family — the base runs its epoch loop per fold. |
 
-What is shared is *plumbing*, not identity: `classes/sklearn_common.py`
-holds the `Pipeline(preprocess, model)` artifact mechanics — assemble,
-predict, joblib save/load — that all four tabular families reuse, plus the
-plain one-shot fit that logreg and random forest share. Every family still
-writes its own `_build_model` and its own space.
+Nothing is shared between the tabular families beyond the base: each
+writes its own `Pipeline(preprocess, model)` assembly, its own joblib
+save/load pair and its own MLflow flavor call. Reading four near-identical
+`save` methods is the price of never having to read three files to find out
+what one family does.
 
-All of them serialize preprocessing and model **together** (D6), so the
+All four of them serialize preprocessing and model **together** (D6), so the
 inference path cannot tell them apart and preprocessing can never drift
 from the model it was fitted beside.
 

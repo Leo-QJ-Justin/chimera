@@ -21,11 +21,14 @@ Decisions worth knowing before editing (D7):
 - **Labels are encoded to 0..K-1 internally** and mapped back on predict:
   ``CrossEntropyLoss`` needs contiguous class indices, the rest of the
   project speaks the original labels.
-- **The base tuner is overridden.** A torch module is not a sklearn
-  estimator, so there is nothing to hand a sklearn scorer; trials score on
-  a holdout instead. ``cross_validate`` needs no override - the base runs
-  this trainer's own ``train`` per fold (R1.11), which is expensive by
-  construction and says so in the log rather than hiding it.
+- **The tuner is this family's own**, as every family's is. What makes
+  torch's distinctive is not that it scores on a holdout - both boosters do
+  too - but that a suggestion has two possible destinations: ``params__*``
+  keys change the checkpoint's shapes, ``options__*`` keys change what the
+  loop does, and the winners are routed to both. ``cross_validate`` needs
+  no override - the base runs this trainer's own ``train`` per fold
+  (R1.11), which is expensive by construction and says so in the log
+  rather than hiding it.
 
 The architecture is the MLP in ``../modules/architectures.py``; another one
 is another trainer class overriding :meth:`_build_model`, not a lookup key
@@ -35,14 +38,16 @@ inside this one.
 import copy
 import logging
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, ClassVar
 
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 
-from ....schemas import TorchTrainerConfig
+from ....schemas import ChoiceSpace, FloatSpace, IntSpace, ParamSpace, TorchTrainerConfig
+from ...evaluation_pipeline.modules.metrics import compute_metrics
 from ..modules.architectures import MLP, count_parameters
 from ..modules.callbacks import (
     EarlyStoppingMonitor,
@@ -63,17 +68,16 @@ from ..modules.device import describe_device, setup_device, wrap_model
 from ..modules.loops import accuracy, evaluate, predict, run_one_epoch
 from ..modules.model_logging import log_flavor_model
 from ..modules.sanity import overfit_single_batch
-from .base_trainer import BaseTrainer, _import_optuna
+from .base_trainer import (
+    TUNE_HOLDOUT_FRACTION,
+    BaseTrainer,
+    _import_optuna,
+    resolve_tune_metric,
+)
 
 logger = logging.getLogger(__name__)
 
 PREPROCESSOR_FILENAME = "preprocessor.joblib"
-
-# Tuning defaults per task: (project metric alias, optimisation direction).
-_TUNE_DEFAULT = {
-    "classification": ("f1_macro", "maximize"),
-    "regression": ("rmse", "minimize"),
-}
 
 
 class TorchTrainer(BaseTrainer):
@@ -97,6 +101,19 @@ class TorchTrainer(BaseTrainer):
     # best-checkpoint choice), so val must stay outside the training data:
     # standing-val protocol (R1.10).
     uses_val_in_fit = True
+
+    # Defaults for the search, prefixed by destination exactly as the
+    # suggestions are; `trainer.tune.space` narrows any of them and `false`
+    # drops one. Dropping either architecture knob turns architecture search
+    # off entirely and keeps the configured `hidden_sizes` (see
+    # _get_param_space): a width without a depth describes no network.
+    TUNABLE: ClassVar[dict[str, ParamSpace]] = {
+        "params__hidden_width": ChoiceSpace(choices=[32, 64, 128, 256]),
+        "params__depth": IntSpace(low=1, high=3),
+        "params__dropout": FloatSpace(low=0.0, high=0.5),
+        "options__lr": FloatSpace(low=1e-4, high=1e-2, log=True),
+        "options__weight_decay": FloatSpace(low=1e-8, high=1e-2, log=True),
+    }
 
     def __init__(
         self,
@@ -147,24 +164,31 @@ class TorchTrainer(BaseTrainer):
             dropout=self.params.get("dropout", 0.0),
         )
 
-    def _get_param_space(self, trial) -> dict:
-        """Search space, split by destination.
+    def _get_param_space(self, trial, space: dict) -> dict:
+        """One trial's suggestion, keyed by destination.
 
         ``params__*`` keys are architecture (they change checkpoint shapes),
         ``options__*`` keys are harness. The prefixes are what let
         :meth:`hyperparameter_tune` route a suggestion without a hardcoded
         list of which knob is which.
+
+        The layer list is *derived*: a width and a depth are two numbers
+        Optuna can sample, a list of layer sizes is not. It survives into
+        ``params`` because the tuner records this resolved dict per trial.
         """
-        width = trial.suggest_categorical("params__hidden_width", [32, 64, 128, 256])
-        depth = trial.suggest_int("params__depth", 1, 3)
-        return {
-            "params__hidden_sizes": [width // (2**i) or 1 for i in range(depth)],
-            "params__dropout": trial.suggest_float("params__dropout", 0.0, 0.5),
-            "options__lr": trial.suggest_float("options__lr", 1e-4, 1e-2, log=True),
-            "options__weight_decay": trial.suggest_float(
-                "options__weight_decay", 1e-8, 1e-2, log=True
-            ),
+        architecture = ("params__hidden_width", "params__depth")
+        resolved = {
+            name: entry.suggest(trial, name)
+            for name, entry in space.items()
+            if name not in architecture
         }
+        if all(name in space for name in architecture):
+            width = space["params__hidden_width"].suggest(trial, "params__hidden_width")
+            depth = space["params__depth"].suggest(trial, "params__depth")
+            resolved["params__hidden_sizes"] = [
+                width // (2**i) or 1 for i in range(depth)
+            ]
+        return resolved
 
     # ------------------------------------------------------------------ fit
 
@@ -348,25 +372,14 @@ class TorchTrainer(BaseTrainer):
         self._best_state = checkpoint["model_state_dict"]
         logger.info("Restored best-monitored weights into the served model")
 
-    # ------------------------------------------------- CV and tuning overrides
+    # -------------------------------------------------------- score and tune
 
-    def _cv_estimator(self, overrides: dict | None = None):
-        """Not available: a torch module is not a sklearn estimator.
-
-        Only the sklearn-scored paths need one, which is why this trainer
-        also overrides :meth:`hyperparameter_tune`. Cross-validation does
-        not come through here: :meth:`BaseTrainer.cross_validate` runs this
-        trainer's own :meth:`train` once per fold.
-
-        Raises:
-            NotImplementedError: Always.
-        """
-        raise NotImplementedError(
-            "TorchTrainer has no sklearn CV estimator; cross_validate runs the "
-            "epoch loop itself, and hyperparameter_tune scores trials on a "
-            "holdout. Wrap the model in a skorch NeuralNet only if a sklearn "
-            "search object is genuinely needed."
-        )
+    def evaluate(
+        self, X: pd.DataFrame, y, metrics: list[str | Callable] | None = None
+    ) -> dict[str, float]:
+        """Score a frame with the project's metric definitions."""
+        self.check_fitted()
+        return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
 
     def fresh(self) -> "TorchTrainer":
         """An unfitted twin, minus the knobs that belong to the real run.
@@ -382,37 +395,63 @@ class TorchTrainer(BaseTrainer):
         X: pd.DataFrame,
         y,
         n_trials: int = 100,
-        cv: int | object = 5,
+        cv: int | Any = 5,
         metric: str | None = None,
-        direction: str = "maximize",
+        direction: str | None = None,
+        space: dict | None = None,
         **optuna_kwargs,
     ) -> dict:
-        """Optuna over a held-out validation split, not k-fold CV.
+        """Optuna over one carved holdout, which every trial early-stops on.
 
-        Overrides the base because k-fold would multiply an already
-        expensive fit by ``cv``, which is therefore **ignored**. ``metric``
-        is a *project metric alias* (``"f1_macro"``, ``"rmse"``) scored
-        through :meth:`evaluate`, not a sklearn scoring string - there is no
-        sklearn scorer to hand a torch module to.
+        ``cv`` is **not read here**: k-fold would multiply an already
+        expensive fit by ``cv``, and the epoch loop needs a standing referee
+        anyway. It still sets the fold count of the selection CV under
+        ``selection.basis: cv``.
+
+        The holdout is carved by
+        :meth:`BaseTrainer._carve_stopping_subset`, so a temporal run's
+        trials stop against the chronological tail rather than a random
+        subset - a monitor that has seen the future is the leak D9 exists to
+        prevent.
 
         Known bias: trials are scored on the same holdout they early-stopped
         against, so the selected score is optimistic. The honest number
         remains the training pipeline's untouched test split.
 
+        Args:
+            n_trials: Optuna trials; each costs one full epoch loop.
+            cv: Ignored by this search (see above).
+            metric: A project metric alias; None -> the task default.
+            direction: None -> inferred from the metric.
+            space: ``trainer.tune.space`` overrides of :attr:`TUNABLE`.
+
         Returns:
             The best parameters found, already folded into ``params`` /
             ``options`` so the next :meth:`train` uses them.
+
+        Raises:
+            ImportError: If optuna is not installed.
         """
         optuna = _import_optuna()
-        if metric is None:
-            metric, direction = _TUNE_DEFAULT[self.task]
-        stratify = y if self._is_classification else None
-        X_tune, X_holdout, y_tune, y_holdout = train_test_split(
-            X, y, test_size=0.2, random_state=self.seed, stratify=stratify
+        metric, direction = resolve_tune_metric(self.task, metric, direction)
+        merged = self._merged_space(space)
+        X_tune, y_tune, X_holdout, y_holdout = self._carve_stopping_subset(
+            self.align(X), np.asarray(y), TUNE_HOLDOUT_FRACTION
+        )
+        logger.info(
+            "Tuning %s over %d trials: %s (%s), %d rows fitted against a "
+            "%d-row holdout per trial, searching %s",
+            self.model_type,
+            n_trials,
+            metric,
+            direction,
+            len(X_tune),
+            len(X_holdout),
+            sorted(merged),
         )
 
         def objective(trial) -> float:
-            resolved = self._get_param_space(trial)
+            resolved = self._get_param_space(trial, merged)
             # The space derives values Optuna never sees as suggestions
             # (hidden_sizes from a width and a depth), so the resolved dict
             # is recorded here and read back from the winning trial.
@@ -422,6 +461,8 @@ class TorchTrainer(BaseTrainer):
             return candidate.evaluate(X_holdout, y_holdout, metrics=[metric])[metric]
 
         study = optuna.create_study(direction=direction, **optuna_kwargs)
+        # show_progress_bar is off: the bar writes to stderr and interleaves
+        # with the run's log file, which is the thing anyone reads afterwards.
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
         self.best_params = dict(study.best_trial.user_attrs["resolved_params"])

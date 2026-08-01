@@ -13,8 +13,13 @@ params:
   max_features: sqrt
 
 tune:
-  # Optuna over classes/random_forest_trainer.py's own space (n_estimators,
-  # max_depth, min_samples_leaf, max_features).
+  # Optuna over classes/random_forest_trainer.py's own TUNABLE table
+  # (n_estimators, max_depth, min_samples_leaf, max_features).
+  #
+  # Every trial is scored by this family's own procedure CV - a candidate
+  # trainer, cross-validated exactly as the run will fit the winner, scored
+  # through evaluate(). So a trial's number and best.json's number are the
+  # same measurement.
   #
   # Pooled protocol (R1.10): this family's fit never reads the validation
   # split (uses_val_in_fit = False), so the folds below run over train+val
@@ -24,5 +29,16 @@ tune:
   enabled: false
   n_trials: 20
   cv: 3
+  # A *project metric alias* - the vocabulary evaluate() and the evaluation
+  # report speak (f1_macro | accuracy | rmse | mae | r2), never a sklearn
+  # scoring string. null -> the task default (f1_macro / rmse).
   metric: null
-  direction: maximize
+  # null -> inferred from the metric, so an error-like metric is minimised
+  # rather than silently maximised. Set it only to override that.
+  direction: null
+  # Per-parameter overrides of the trainer's declared ranges. `false` drops a
+  # name from the search entirely and leaves `params` above in charge of it;
+  # a name this family does not tune raises, listing the ones it does.
+  # space:
+  #   n_estimators: {low: 200, high: 400, step: 50}
+  #   max_depth: false

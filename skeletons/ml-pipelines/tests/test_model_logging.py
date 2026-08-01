@@ -135,12 +135,12 @@ def test_logging_never_aborts_the_run(
     Tracking is genuinely live here - with it off the pipeline never calls
     log_model at all, and the test would prove nothing.
     """
-    from PROJECT.pipelines.training_pipeline.classes import sklearn_common
+    from PROJECT.pipelines.training_pipeline.classes import logreg_trainer
 
     def explode(*args, **kwargs):
         raise RuntimeError("flavor exploded")
 
-    monkeypatch.setattr(sklearn_common, "log_flavor_model", explode)
+    monkeypatch.setattr(logreg_trainer, "log_flavor_model", explode)
     config = make_training_config(
         tmp_path, processed_file, LOGREG_TRAINER, mlflow=mlflow_config
     )

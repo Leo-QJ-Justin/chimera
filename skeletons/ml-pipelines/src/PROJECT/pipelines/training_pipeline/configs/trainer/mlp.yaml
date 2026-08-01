@@ -69,16 +69,31 @@ torch:
   deterministic_cudnn: false
 
 tune:
-  # TorchTrainer overrides the base tuner: `cv` is ignored *by the search*
-  # and each trial trains on a held-out split instead (see
-  # classes/torch_trainer.py), and `metric` is a project metric alias rather
-  # than a sklearn scoring string.
+  # The search carves one 20% holdout off the rows it is handed - the
+  # chronological tail under `split.mode: temporal` - and every trial runs a
+  # full epoch loop monitored against it and is then scored on it (see
+  # classes/torch_trainer.py). Known bias: a trial is scored on the rows it
+  # early-stopped against, so the winning score is optimistic; test stays
+  # untouched.
   #
-  # `cv` is still read as the fold count of the selection CV under
-  # `selection.basis: cv` (R1.11) - which is k full epoch-loop fits, so
-  # budget for it before switching a torch run onto that basis.
+  # `cv` is NOT read by this search - k full epoch loops per trial would be
+  # the wrong place to spend the budget. It is still read as the fold count
+  # of the selection CV under `selection.basis: cv` (R1.11), which is k full
+  # epoch-loop fits, so budget for it before switching a torch run onto that
+  # basis.
   enabled: false
   n_trials: 10
   cv: 3
-  metric: null        # null -> f1_macro (classification) / rmse (regression)
-  direction: maximize
+  metric: null        # project metric alias; null -> f1_macro (classification) / rmse (regression)
+  # null -> inferred from the metric, so an error-like metric is minimised
+  # rather than silently maximised. Set it only to override that.
+  direction: null
+  # Per-parameter overrides of the trainer's declared ranges, under the same
+  # destination prefixes the suggestions use: `params__*` changes the
+  # checkpoint's shapes, `options__*` changes what the loop does. Dropping
+  # either architecture knob with `false` turns architecture search off and
+  # keeps the `hidden_sizes` configured above - a width without a depth
+  # describes no network.
+  # space:
+  #   options__lr: {low: 1.0e-4, high: 1.0e-3, log: true}
+  #   params__depth: false

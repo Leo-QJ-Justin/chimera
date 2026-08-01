@@ -12,15 +12,19 @@ import pytest
 from pydantic import ValidationError
 
 from PROJECT.schemas import (
+    ChoiceSpace,
     DataPipelineConfig,
     DiagnosticsConfig,
     EvaluationConfig,
+    FloatSpace,
     InferenceConfig,
+    IntSpace,
     PlotsConfig,
     ShapConfig,
     TorchTrainerConfig,
     TrainingConfig,
     TrainingSplitConfig,
+    TuneConfig,
 )
 
 
@@ -93,6 +97,17 @@ class TestTrainingConfig:
         with pytest.raises(ValidationError, match="is not produced"):
             TrainingConfig(task="regression", selection={"metric": "f1_macro"})
 
+    def test_tune_metric_must_exist_for_the_task(self):
+        # A project metric alias now, in the same vocabulary evaluate speaks -
+        # which is also what catches a leftover sklearn scoring string.
+        with pytest.raises(ValidationError, match="is not produced"):
+            TrainingConfig(
+                task="regression",
+                selection={"metric": "rmse", "mode": "min"},
+                split={"mode": "shuffle"},
+                trainer={"tune": {"metric": "neg_root_mean_squared_error"}},
+            )
+
     def test_regression_rejects_a_stratified_split(self):
         with pytest.raises(ValidationError, match="categorical target"):
             TrainingConfig(
@@ -156,6 +171,46 @@ def _shipped(pipeline: str, filename: str) -> dict:
 
     path = Path(PROJECT.__file__).parent / "pipelines" / pipeline / "configs" / filename
     return yaml.safe_load(path.read_text())
+
+
+class TestTuneConfigSpaces:
+    """``tune.space`` entries: which kind of range a dict becomes, and when.
+
+    The union has to be unambiguous - a range typed into a config decides
+    what a search does, and a float range silently read as an integer one
+    would be a different search that still runs.
+    """
+
+    def test_each_shape_parses_as_its_own_kind(self):
+        config = TuneConfig(
+            space={
+                "max_depth": {"low": 3, "high": 20},
+                "learning_rate": {"low": 0.01, "high": 0.3, "log": True},
+                "max_features": {"choices": ["sqrt", "log2", None]},
+                "n_estimators": False,
+            }
+        )
+        assert isinstance(config.space["max_depth"], IntSpace)
+        assert isinstance(config.space["learning_rate"], FloatSpace)
+        assert isinstance(config.space["max_features"], ChoiceSpace)
+        # `false` is the disable switch, not a range with no fields.
+        assert config.space["n_estimators"] is False
+
+    def test_an_unknown_range_field_is_rejected(self):
+        # extra="forbid" here, unlike the composite sections: nothing composes
+        # keys into a range, so an unrecognised one is a typo that would
+        # otherwise be dropped and searched as if it had never been written.
+        with pytest.raises(ValidationError):
+            TuneConfig(space={"max_depth": {"low": 3, "high": 20, "scale": "log"}})
+
+    def test_a_log_scaled_integer_range_rejects_a_step(self):
+        with pytest.raises(ValidationError, match="log=true"):
+            IntSpace(low=1, high=100, step=5, log=True)
+
+    def test_direction_defaults_to_unset_rather_than_maximize(self):
+        # None means "infer from the metric"; a maximize default would make
+        # `metric: rmse` search for the worst model in the space.
+        assert TuneConfig().direction is None
 
 
 class TestTorchTrainerConfig:

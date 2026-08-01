@@ -231,8 +231,11 @@ class TrainingPipeline:
     def _tune(self, trainer, X_search, y_search) -> None:
         """Search over the protocol's frames: train, or the train+val pool.
 
-        The tuner folds over whatever it is handed, so the protocol is
-        expressed here rather than inside it.
+        The family's own tuner searches whatever it is handed - folding over
+        it, or carving its own referee out of it - so the protocol is
+        expressed here rather than inside it. ``metric`` is a project metric
+        alias, and a null ``direction`` is left null so the trainer infers
+        it from the metric rather than assuming higher is better.
         """
         tune = self.config.trainer.tune
         trainer.hyperparameter_tune(
@@ -242,6 +245,7 @@ class TrainingPipeline:
             cv=tune.cv,
             metric=tune.metric,
             direction=tune.direction,
+            space=tune.space,
         )
 
     def _evaluate(self, tracker, trainer, X: dict, y: dict, X_fit, y_fit) -> dict:

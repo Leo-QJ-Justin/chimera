@@ -6,10 +6,15 @@ orchestrator free of ``if trainer.kind == ...`` branches, and what lets the
 inference pipeline reload a torch run and a LightGBM run with identical
 code.
 
-Subclasses implement ``_build_model``, ``_get_param_space``,
-``train``/``predict`` and ``save``/``load``. In exchange the base gives
-them ``evaluate``, ``cross_validate`` and ``hyperparameter_tune`` - the
-three places per-family reimplementations drift apart.
+The base is deliberately thin. It fixes the *contract* - which methods
+exist and what they promise - plus the few services that must be identical
+across families for their numbers to be comparable: ``cross_validate``
+(the whole procedure goes inside the fold, R1.11), the stopping-subset
+carve, the spec round-trip, and the shared tuning tables below. Everything
+a family does to a model it writes in its own class body, ``evaluate`` and
+``hyperparameter_tune`` included, so each trainer file reads top to bottom
+without hopping up a hierarchy. Sibling duplication is the accepted price;
+a family that cannot be read on its own is what it buys off.
 
 Four decisions the rest of the file assumes:
 
@@ -39,24 +44,65 @@ from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import cross_validate as sk_cross_validate
+from pydantic import ValidationError
 from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
 
 from ....core.run_artifacts import load_metadata
-from ...evaluation_pipeline.modules.metrics import compute_metrics
+from ....schemas import ParamSpace
+from ...evaluation_pipeline.modules.metrics import METRIC_DIRECTIONS
 from ..modules.preprocessing import build_preprocessor
 from ..modules.splitting import make_cv_splitter
 
 logger = logging.getLogger(__name__)
 
-# sklearn *scoring* strings (not metric-function names), for the tuner -
-# which scores through sklearn's own cross_validate.
-TUNE_METRIC = {"classification": "f1_macro", "regression": "neg_root_mean_squared_error"}
+# Tuning defaults per task: (project metric alias, optimisation direction).
+# One table for every family, so what a tuned run optimises by default is a
+# property of the task rather than of whichever trainer was selected.
+TUNE_DEFAULT = {
+    "classification": ("f1_macro", "maximize"),
+    "regression": ("rmse", "minimize"),
+}
+# Share of the search frames a standing-val family carves off as the referee
+# its trials early-stop against and are then scored on. Larger than
+# CV_STOP_FRACTION because here the carve is also the *score*: one split
+# decides the winner, so it has to be big enough to mean something.
+TUNE_HOLDOUT_FRACTION = 0.2
 # Share of each CV fold's training rows carved out as the early-stopping
 # referee, for families whose fit needs one (R1.11). Matches the standing
 # val split's share of the run, so a fold's fit is shaped like the real one.
 CV_STOP_FRACTION = 0.15
+
+
+def resolve_tune_metric(
+    task: str, metric: str | None, direction: str | None
+) -> tuple[str, str]:
+    """``(metric, direction)`` for a search: what was asked, else the tables.
+
+    Every family opens its ``hyperparameter_tune`` with this line, which is
+    why it is a function rather than five copies of a lookup: it is data
+    resolution, not part of any family's ML story.
+
+    Args:
+        task: ``"classification"`` or ``"regression"``.
+        metric: A project metric alias, or None for the task default.
+        direction: ``"maximize"``/``"minimize"``, or None to infer it from
+            the metric.
+
+    Raises:
+        ValueError: If a direction has to be inferred for a metric that has
+            none recorded. A custom metric may be optimised, but only with
+            its direction said out loud - a search run the wrong way round
+            still finishes and still writes a run.
+    """
+    default_metric, default_direction = TUNE_DEFAULT[task]
+    if metric is None:
+        return default_metric, direction or default_direction
+    if direction is None and metric not in METRIC_DIRECTIONS:
+        raise ValueError(
+            f"No recorded direction for metric {metric!r}: name one of "
+            f"{sorted(METRIC_DIRECTIONS)}, or set tune.direction explicitly"
+        )
+    return metric, direction or METRIC_DIRECTIONS[metric]
 
 
 def _import_optuna():
@@ -95,6 +141,9 @@ class BaseTrainer(ABC):
             The training pipeline reads it to pick the protocol (R1.10):
             True keeps val a standing referee outside the fit, False pools
             train+val and selects on a k-fold CV estimate.
+        TUNABLE: This family's search space - parameter name -> default
+            range - declared in its own class body and overridable per run
+            through ``trainer.tune.space``.
         best_params: Set by :meth:`hyperparameter_tune`; folded into
             ``params`` so the next ``train`` uses them.
         history: Per-iteration records for trainers that have iterations.
@@ -108,6 +157,9 @@ class BaseTrainer(ABC):
     # Every concrete trainer states its own (tests/test_trainers.py enforces
     # that it is declared in the family's own class body).
     uses_val_in_fit: ClassVar[bool]
+    # Same rule, same reason: what a family searches over is part of what the
+    # family is, so there is nothing sensible here to inherit.
+    TUNABLE: ClassVar[dict[str, ParamSpace]]
 
     def __init__(
         self,
@@ -148,8 +200,21 @@ class BaseTrainer(ABC):
         """
 
     @abstractmethod
-    def _get_param_space(self, trial) -> dict:
-        """This family's Optuna space: parameter name -> suggested value."""
+    def _get_param_space(self, trial, space: dict) -> dict:
+        """One trial's parameters, suggested define-by-run from ``space``.
+
+        Args:
+            trial: The Optuna trial (duck-typed: only ``suggest_*`` is used).
+            space: The merged table from :meth:`_merged_space`. A name absent
+                from it must not be suggested at all - that is how
+                ``tune.space: {<name>: false}`` takes a knob out of a search.
+
+        Returns:
+            The **resolved** parameters, derived values included (a solver's
+            penalty, a width and a depth turned into a layer list). Optuna
+            records only what it suggested, so this dict is what each
+            family's tuner stores on the trial and reads back off the winner.
+        """
 
     @abstractmethod
     def train(
@@ -165,6 +230,66 @@ class BaseTrainer(ABC):
     @abstractmethod
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Hard predictions: class labels, or values for regression."""
+
+    @abstractmethod
+    def evaluate(
+        self, X: pd.DataFrame, y, metrics: list[str | Callable] | None = None
+    ) -> dict[str, float]:
+        """Score a frame with the project's metric definitions.
+
+        Three lines every family writes identically (``check_fitted``, then
+        ``compute_metrics`` over its own predictions) and none inherits: it
+        is the measurement behind every number a run publishes, and it
+        belongs in the file whose predictions it measures.
+
+        Args:
+            X: Features, in any column order (realigned internally).
+            y: Ground truth.
+            metrics: Metric names or callables; None -> the task defaults.
+        """
+
+    @abstractmethod
+    def hyperparameter_tune(
+        self,
+        X: pd.DataFrame,
+        y,
+        n_trials: int = 100,
+        cv: int | Any = 5,
+        metric: str | None = None,
+        direction: str | None = None,
+        space: dict | None = None,
+        **kwargs,
+    ) -> dict:
+        """Search this family's own space; the family owns the whole search.
+
+        Abstract, and abstract *only*: there is no shared sweeper to inherit
+        and no hook to fill in. A family scores its trials by the procedure
+        it actually ships - a pooled family through :meth:`cross_validate`,
+        a standing-val family on a carved holdout its trials early-stop
+        against - and nothing obliges the next family to use Optuna at all.
+        What the base fixes is this signature and the postconditions below,
+        which is all the training pipeline calls.
+
+        Args:
+            n_trials: Search budget, in trials.
+            cv: Fold count (the splitter follows ``cv_mode``, per D9) or an
+                explicit splitter, for a family that scores a trial by
+                cross-validation. A family that scores a trial on a holdout
+                ignores it, and says so.
+            metric: A *project metric alias* - the vocabulary
+                :meth:`evaluate` speaks, never a sklearn scoring string.
+                None -> ``TUNE_DEFAULT[task]``.
+            direction: ``"maximize"``/``"minimize"``; None -> inferred from
+                the metric (:func:`resolve_tune_metric`).
+            space: ``trainer.tune.space`` - per-parameter overrides of this
+                family's ``TUNABLE``, merged by :meth:`_merged_space`.
+
+        Returns:
+            The best parameters found. The same dict must be left on
+            ``self.best_params`` and folded into this trainer's own config,
+            so the next :meth:`train` builds with them - a search result is
+            not something the caller can be trusted to remember to apply.
+        """
 
     @abstractmethod
     def save(self, run_dir: str | Path) -> dict[str, str]:
@@ -207,19 +332,6 @@ class BaseTrainer(ABC):
         logger.debug("%s logs no MLflow model", type(self).__name__)
 
     # -------------------------------------------------- concrete services
-
-    def evaluate(
-        self, X: pd.DataFrame, y, metrics: list[str | Callable] | None = None
-    ) -> dict[str, float]:
-        """Score a frame with the project's metric definitions.
-
-        Args:
-            X: Features, in any column order (realigned internally).
-            y: Ground truth.
-            metrics: Metric names or callables; None -> the task defaults.
-        """
-        self.check_fitted()
-        return compute_metrics(y, self.predict(X), task=self.task, metrics=metrics)
 
     def cross_validate(
         self,
@@ -303,7 +415,9 @@ class BaseTrainer(ABC):
         The referee a standing-val family's fit needs, taken from inside
         the fold. Reusing the run's standing val split instead would let
         every fold stop against the same rows, and a fold score is only an
-        out-of-sample number if nothing about the fit saw those rows.
+        out-of-sample number if nothing about the fit saw those rows. The
+        same carve is what gives such a family's *search* the per-trial
+        referee its trials early-stop against and are then scored on.
 
         Temporal mode carves the chronological **tail** of the fold: a
         stopping criterion that has seen the future is the leak D9 exists
@@ -344,94 +458,62 @@ class BaseTrainer(ABC):
         """
         return type(self).from_spec(self.spec())
 
-    def hyperparameter_tune(
-        self,
-        X: pd.DataFrame,
-        y,
-        n_trials: int = 100,
-        cv: int | Any = 5,
-        metric: str | None = None,
-        direction: str = "maximize",
-        **optuna_kwargs,
-    ) -> dict:
-        """Bayesian search over :meth:`_get_param_space`, scored by CV.
+    def _merged_space(self, overrides: dict | None = None) -> dict[str, ParamSpace]:
+        """This family's ``TUNABLE`` table with a config's overrides applied.
 
-        A fresh model per trial, and the winners are folded into
-        ``self.params`` so the next :meth:`train` builds with them - a
-        search result must not be a thing the caller can forget to apply.
+        The one piece of tuning machinery that is shared, because it is the
+        *config contract* rather than anyone's search: a range typed into
+        ``trainer.tune.space`` has to mean the same thing whichever family
+        reads it.
 
-        Args:
-            n_trials: Optuna trials.
-            cv: Fold count (splitter follows ``cv_mode``) or a splitter.
-            metric: sklearn scoring string; None -> the task default.
-            direction: ``"maximize"`` or ``"minimize"``. Every default
-                scoring string here is already higher-is-better (sklearn's
-                ``neg_*`` convention), so the default is maximize.
+        Three behaviours, in the order a config meets them:
 
-        Returns:
-            The best parameters found.
+        - ``false`` drops the name from the search entirely. Nothing
+          special-cases it afterwards - the parameter simply keeps whatever
+          ``params`` says, exactly as on an untuned run.
+        - A range is merged **field-wise onto the declared one and
+          re-validated as the declared kind**, so overriding ``low``/``high``
+          keeps a declared ``log: true`` instead of silently resetting it,
+          and a list of choices written over a numeric range fails loudly
+          rather than half-applying.
+        - An unrecognised name raises, listing what this family does tune. A
+          typo there would otherwise read as configured and search as if it
+          were not.
 
         Raises:
-            ImportError: If optuna is not installed.
+            ValueError: On an unknown parameter name, or an override that
+                cannot be read as the declared kind of range.
         """
-        optuna = _import_optuna()
-        metric = metric or TUNE_METRIC[self.task]
-        splitter = self._splitter(cv)
-        X_aligned = self.align(X)
-
-        def objective(trial) -> float:
-            resolved = self._get_param_space(trial)
-            # study.best_params holds only what was *suggested*; a space that
-            # derives a value from a suggestion (a solver's penalty, a width
-            # to a layer list) would lose it. Record the resolved dict here
-            # and read it back from the winning trial.
-            trial.set_user_attr("resolved_params", resolved)
-            scores = sk_cross_validate(
-                self._cv_estimator(resolved),
-                X_aligned,
-                y,
-                cv=splitter,
-                scoring=metric,
-                return_train_score=False,
-            )
-            return float(np.mean(scores["test_score"]))
-
-        study = optuna.create_study(direction=direction, **optuna_kwargs)
-        # show_progress_bar is off: the bar writes to stderr and interleaves
-        # with the run's log file, which is the thing anyone reads afterwards.
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
-
-        self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
-        self.params.update(self.best_params)
-        logger.info(
-            "Tuned %s over %d trials: best %s=%.6f with %s",
-            self.model_type,
-            n_trials,
-            metric,
-            study.best_value,
-            self.best_params,
-        )
-        return self.best_params
+        merged = dict(type(self).TUNABLE)
+        for name, override in (overrides or {}).items():
+            if name not in merged:
+                raise ValueError(
+                    f"tune.space names {name!r}, which {type(self).__name__} does "
+                    f"not tune; its tunables are {sorted(merged)}"
+                )
+            if override is False:
+                merged.pop(name)
+                continue
+            declared = merged[name]
+            kind = type(declared)
+            # exclude_unset so an override says only what it meant to say: a
+            # full dump would carry the override's own defaults along with it
+            # and overwrite fields the config never mentioned.
+            fields = {**declared.model_dump(), **override.model_dump(exclude_unset=True)}
+            try:
+                merged[name] = kind(**fields)
+            except ValidationError as e:
+                raise ValueError(
+                    f"tune.space.{name} is not a valid {kind.__name__}, which is "
+                    f"how {type(self).__name__} declares it: {e}"
+                ) from e
+        return merged
 
     def _splitter(self, cv: int | Any):
         """A fold count follows ``cv_mode`` (D9); a splitter passes through."""
         return (
             make_cv_splitter(self.cv_mode, cv, self.seed) if isinstance(cv, int) else cv
         )
-
-    def _cv_estimator(self, overrides: dict | None = None):
-        """A fresh, unfitted, sklearn-compatible pipeline for the tuner.
-
-        Preprocessing is *inside* it so every fold refits its own imputers
-        and encoders - the leakage-as-architecture fix (D6). Trainers whose
-        model is not sklearn-compatible override this and say so;
-        :meth:`cross_validate` no longer needs it, because it runs the
-        family's own procedure per fold instead.
-        """
-        model = self._build_model()
-        if overrides:
-            model.set_params(**overrides)
-        return Pipeline([("preprocess", self.new_preprocessor()), ("model", model)])
 
     # -------------------------------------------------------------- shared
 

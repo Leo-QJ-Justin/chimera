@@ -25,7 +25,6 @@ from sklearn.metrics import (
     accuracy_score,
     classification_report,
     f1_score,
-    make_scorer,
     mean_absolute_error,
     mean_squared_error,
     r2_score,
@@ -48,6 +47,20 @@ METRIC_FUNCTIONS: dict[str, Callable] = {
     "rmse": lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true, y_pred)),
     "mae": mean_absolute_error,
     "r2": r2_score,
+}
+
+# Which way is "better", per alias. Read by anything that has to optimise a
+# metric it was handed without also being told a direction - the trainers'
+# hyperparameter_tune, whose `direction` config defaults to null. It is a
+# table rather than a "maximize unless told otherwise" default because the
+# error-like aliases would then be silently searched the wrong way round,
+# and a search for the worst model still finishes and still writes a run.
+METRIC_DIRECTIONS: dict[str, str] = {
+    "accuracy": "maximize",
+    "f1_macro": "maximize",
+    "rmse": "minimize",
+    "mae": "minimize",
+    "r2": "maximize",
 }
 
 
@@ -102,39 +115,6 @@ def compute_metrics(
         name, function = resolve_metric(metric)
         results[name] = float(function(y_true, y_pred))
     return results
-
-
-def cv_scoring(metric: str | Callable) -> dict[str, Callable]:
-    """One project metric as a sklearn scoring mapping.
-
-    The bridge for sklearn's own machinery - ``sklearn.cross_validate``,
-    ``GridSearchCV``, the base trainer's Optuna objective - which scores
-    through the scorer protocol rather than through :func:`compute_metrics`,
-    so a project alias has to be *wrapped* rather than named. Naming it
-    would be wrong twice: ``"rmse"`` is not a sklearn scoring string at all
-    (it is ``neg_root_mean_squared_error``), and reaching for sklearn's own
-    string would re-decide what the alias means - which is precisely what
-    this module exists to prevent.
-
-    ``BaseTrainer.cross_validate`` needs no scorer: it runs the family's own
-    procedure per fold and scores the fold through :func:`compute_metrics`
-    directly, so it takes metric *names*. Either way the measurement behind
-    ``best.json`` is the one the evaluation report prints.
-
-    Args:
-        metric: A project metric name (or callable), as ``selection.metric``.
-
-    Returns:
-        ``{name: scorer}``, for any sklearn API that takes ``scoring=``.
-
-    Note:
-        ``greater_is_better=True`` is not a claim about the metric; it only
-        tells ``make_scorer`` to leave the sign alone, so the fold mean *is*
-        the metric and ``selection.mode`` stays the one place direction is
-        declared.
-    """
-    name, function = resolve_metric(metric)
-    return {name: make_scorer(function, greater_is_better=True)}
 
 
 def per_class_table(y_true, y_pred) -> pd.DataFrame:
