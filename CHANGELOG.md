@@ -4,6 +4,47 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.4.0] - 2026-08-01
+
+### Added
+- Per-family tuning/evaluation protocol in the ML Pipelines scaffold,
+  keyed on each trainer's own `uses_val_in_fit` declaration (R1.10):
+  families whose fit never reads a validation split (`logreg`,
+  `random_forest`) tune and fit on train+val pooled and select on an
+  honest k-fold CV estimate (`cv_<metric>` in `best.json`); early-stopping
+  families (`lightgbm`, `xgboost`, `torch`) keep the standing-val
+  protocol.
+- Procedure-level cross-validation (R1.11): `cross_validate` runs each
+  family's whole training procedure per fold — fresh trainer, per-fold
+  early-stopping carve (chronological tail under temporal mode) — and
+  `selection.basis: cv` puts every family on the same CV yardstick so
+  different families rank against each other in one output directory
+  without touching test.
+- Declarative, config-overridable search spaces (R1.12): each family
+  declares `TUNABLE` (name → default range) in its own class body;
+  `trainer.tune.space` narrows any range or drops a name with `false`;
+  `tune.metric` is a project metric alias and a null `tune.direction` is
+  inferred per metric, so an error metric cannot be silently maximised.
+
+### Changed
+- Trainer families are self-contained (R1.12): `sklearn_common.py` is
+  dissolved and every family is one hop from `BaseTrainer`, declaring its
+  full ML surface — `train`, `predict`, `predict_proba`, `evaluate`,
+  `hyperparameter_tune`, `save`, `load`, `log_model` — in its own class
+  body, enforced by `__dict__` contract tests. There is no shared Optuna
+  sweeper: each family's tuner scores trials by the procedure it ships
+  (pooled families via procedure CV, standing-val families on a carved
+  20% holdout), in project metric aliases.
+- The training pipeline is a pure orchestrator (R1.13): protocol knowledge
+  moved into three per-family methods (`fit_frames`, `evaluate_run`,
+  `selection_key`) and `pipeline.py` no longer reads `uses_val_in_fit`.
+  Trainers stay tracker-free and receive plain values, never config
+  objects.
+- Booster tuning trials now early-stop against their carved holdout
+  instead of training the full `n_estimators`, so tuned winners differ
+  from historical runs; the `selection_cv` stage timer became `evaluate`
+  (`time_evaluate_s`). Scaffold test count: 309.
+
 ## [1.3.0] - 2026-07-31
 
 ### Added
