@@ -6,6 +6,14 @@ trainer contract. Model families (`logreg`, `random_forest`, `lightgbm`,
 `xgboost`, `torch`) plug in behind that contract, so swapping one is a
 config flag and never a code change.
 
+## Documentation
+
+- [docs/pipelines.md](docs/pipelines.md) - the technical reference:
+  repository structure, each pipeline's flow and artifacts, every config
+  key, the provenance record, the metric system.
+- [docs/extending.md](docs/extending.md) - the extension cookbook: where a
+  new metric, plot, model family, tunable, config knob or artifact goes.
+
 ## Philosophy
 
 Five commitments this scaffold enforces structurally:
