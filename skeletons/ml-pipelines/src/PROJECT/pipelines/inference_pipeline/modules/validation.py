@@ -11,15 +11,21 @@ from pathlib import Path
 
 import pandas as pd
 
+from ....core.run_artifacts import read_table
+
 logger = logging.getLogger(__name__)
 
 
 def read_input(path: str | Path) -> pd.DataFrame:
-    """Read the inference input; ``.csv``/``.parquet`` chosen by suffix."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Inference input not found: {path}")
-    df = pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)
+    """Read the inference input and log the shape that arrived.
+
+    Args:
+        path: Input file, ``.csv`` or ``.parquet``.
+
+    Returns:
+        The input frame, before any contract check.
+    """
+    df = read_table(path)
     logger.info("Input %s: %d rows x %d cols", path, len(df), df.shape[1])
     return df
 

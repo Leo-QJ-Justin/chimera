@@ -3,6 +3,7 @@
 import json
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from PROJECT.core import run_artifacts as ra
@@ -54,6 +55,24 @@ def test_best_pointer_rejects_bad_mode(tmp_path):
         ra.save_best_pointer(tmp_path, "t1", 0.5, metric="rmse", mode="up")
 
 
+def test_read_table_dispatches_on_suffix(tmp_path):
+    frame = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    frame.to_csv(tmp_path / "t.csv", index=False)
+    frame.to_parquet(tmp_path / "t.parquet")
+    pd.testing.assert_frame_equal(ra.read_table(tmp_path / "t.csv"), frame)
+    pd.testing.assert_frame_equal(ra.read_table(tmp_path / "t.parquet"), frame)
+
+
+def test_read_table_names_the_problem(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Table not found"):
+        ra.read_table(tmp_path / "absent.csv")
+    # An unreadable format says so, rather than being handed to the CSV
+    # reader and failing somewhere in the parse.
+    (tmp_path / "t.xlsx").write_text("not a table")
+    with pytest.raises(ValueError, match="Unsupported table format"):
+        ra.read_table(tmp_path / "t.xlsx")
+
+
 def test_metadata_envelope_roundtrip(tmp_path):
     ra.save_metadata(
         tmp_path,
@@ -69,7 +88,9 @@ def test_metadata_envelope_roundtrip(tmp_path):
     meta = ra.load_metadata(tmp_path)
     assert meta["files"]["model"] == "model.txt"
     assert meta["upstream_config"] == {"clean": True}
-    assert "python_version" in meta["environment"]
+    # Interpreter inline, package versions by pointer: one recorded copy.
+    assert meta["environment"]["python"]
+    assert meta["environment"]["packages"] == ra.ENVIRONMENT_FILENAME
 
 
 def test_feature_column_contract():

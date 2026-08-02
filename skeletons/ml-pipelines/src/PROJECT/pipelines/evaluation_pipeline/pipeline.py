@@ -29,6 +29,7 @@ from ...core.run_artifacts import (
     load_metadata,
     make_run_dir,
     make_serialisable,
+    read_table,
     resolve_artifact_path,
     save_config_snapshot,
     save_latest_pointer,
@@ -170,8 +171,8 @@ class EvaluationPipeline:
                 duplicate keys (which would multiply rows silently).
         """
         config = self.config
-        predictions = _read(config.predictions_path)
-        processed = _read(config.processed_path)
+        predictions = read_table(config.predictions_path)
+        processed = read_table(config.processed_path)
 
         self._require(
             predictions, [*config.key_cols, config.prediction_col], "predictions"
@@ -430,11 +431,3 @@ def _describe_basis(best_metric: str) -> str:
         "val": "the validation split",
         "test": "the test split",
     }.get(prefix, "an unrecognised basis")
-
-
-def _read(path: str | Path) -> pd.DataFrame:
-    """Read an evaluation input; ``.csv``/``.parquet`` chosen by suffix."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Evaluation input not found: {path}")
-    return pd.read_parquet(path) if path.suffix == ".parquet" else pd.read_csv(path)

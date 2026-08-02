@@ -7,10 +7,6 @@ deliberate: metrics belong to the pipeline that reports them, and a second
 definition beside the trainer produces a validation F1 that disagrees with
 the report's F1. A metric added here flows into ``best.json``, the tracker
 and the evaluation report at once; one added inline does not.
-
-Logging convention: scalars go through the logger, while the
-pre-formatted ``classification_report`` block goes through ``print``,
-because a per-line level prefix mangles an aligned table.
 """
 
 import logging
@@ -154,9 +150,3 @@ def log_metrics(metrics: dict[str, float], split: str) -> None:
     """Log scalars one line each - greppable, and safe for log shipping."""
     for name, value in metrics.items():
         logger.info("%s %s: %.4f", split, name, value)
-
-
-def print_classification_report(y_true, y_pred, split: str) -> None:
-    """Print the per-class breakdown as its aligned text block."""
-    print(f"\n=== classification report [{split}] ===")
-    print(classification_report(y_true, y_pred, zero_division=0))

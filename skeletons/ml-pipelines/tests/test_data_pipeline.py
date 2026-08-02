@@ -8,12 +8,8 @@ import pytest
 # schema-derived constants are importable by name.
 from conftest import TEST_DATE_COL, TEST_KEY_COLS, TEST_TARGET
 from PROJECT.core.run_artifacts import file_fingerprint
-from PROJECT.pipelines.data_pipeline import (
-    DataPipeline,
-    clean,
-    engineer_features,
-    load_manifest,
-)
+from PROJECT.pipelines.data_pipeline import DataPipeline, load_manifest
+from PROJECT.pipelines.data_pipeline.modules.cleaning import clean, engineer_features
 from PROJECT.schemas import CleaningConfig, DataPipelineConfig, FeatureEngineeringConfig
 
 

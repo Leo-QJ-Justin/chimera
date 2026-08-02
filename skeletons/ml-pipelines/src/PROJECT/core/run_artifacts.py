@@ -9,6 +9,9 @@ latest.json/best.json pointers, never by globbing directories:
 
 ``metadata.json`` is the reload contract for saved models: the loader
 reads metadata first and never guesses at filenames.
+
+The tabular files a run reads and writes go through ``read_table``, so
+the accepted formats are one decision rather than one per pipeline.
 """
 
 import hashlib
@@ -23,6 +26,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +178,42 @@ def resolve_artifact_path(base: str | Path, timestamp: str | None = None) -> Pat
     return path
 
 
+# ------------------------------------------------------------------ tables
+
+
+def read_table(path: str | Path) -> pd.DataFrame:
+    """Read a tabular file, choosing the reader by suffix.
+
+    Every pipeline reads its input table through this function, so which
+    formats a stage accepts is one decision rather than four, and a typo in
+    a path produces the same message wherever it is made. Callers keep
+    whatever they add on top - a date-column parse, a shape log line, a
+    column contract - and stop restating how a table is read.
+
+    Args:
+        path: File to read; ``.parquet`` or ``.csv``.
+
+    Returns:
+        The table as read, untouched.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: On any other suffix, naming what is supported rather
+            than guessing at a reader.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Table not found: {path}")
+    if path.suffix == ".parquet":
+        return pd.read_parquet(path)
+    if path.suffix == ".csv":
+        return pd.read_csv(path)
+    raise ValueError(
+        f"Unsupported table format {path.suffix!r} ({path}); expected "
+        "'.parquet' or '.csv'"
+    )
+
+
 # ---------------------------------------------------------------- metadata
 
 
@@ -215,7 +255,14 @@ def save_metadata(
         "model_type": model_type,
         "timestamp": timestamp,
         "created_at": datetime.now(ZoneInfo(tz)).isoformat(),
-        "environment": get_environment_info(),
+        # Interpreter and machine only. Package versions have one home,
+        # ``environment.json``, named here so a reader of the envelope knows
+        # where to look rather than comparing two lists that can disagree.
+        "environment": {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+            "packages": ENVIRONMENT_FILENAME,
+        },
         "feature_columns": feature_columns,
         "target_columns": target_columns,
         "hyperparameters": hyperparameters,
@@ -315,20 +362,6 @@ def get_git_info() -> dict:
         return {"commit": "N/A", "branch": "N/A", "dirty": "N/A"}
 
 
-def get_environment_info() -> dict:
-    """Python/platform plus best-effort library versions."""
-    info = {
-        "python_version": sys.version.split()[0],
-        "platform": platform.platform(),
-    }
-    for lib in ("numpy", "pandas", "sklearn", "lightgbm", "torch", "mlflow"):
-        try:
-            info[lib] = __import__(lib).__version__
-        except ImportError:
-            pass
-    return info
-
-
 def record_environment(run_dir: str | Path) -> Path:
     """Write ``environment.json``: the interpreter and versions that ran.
 
@@ -339,8 +372,9 @@ def record_environment(run_dir: str | Path) -> Path:
 
     Versions are resolved by distribution name through
     ``importlib.metadata``, so the file lists what an install would have to
-    provide. The inline block in ``metadata.json`` stays a glance-level
-    summary keyed the way the imports are.
+    provide - names that go straight into a pin, rather than the import
+    names a module-attribute probe would report. This is the only place
+    package versions are recorded; ``metadata.json`` points here.
 
     Args:
         run_dir: Directory the file is written into.

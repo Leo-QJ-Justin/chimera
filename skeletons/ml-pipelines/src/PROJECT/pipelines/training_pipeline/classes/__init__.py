@@ -30,15 +30,6 @@ TRAINERS = {
     "torch": ("torch_trainer", "TorchTrainer"),
 }
 
-# Per-family harness sections: TrainerConfig -> the family's own kwargs.
-# Only the selected family's section is passed on, so an unused section can
-# stay in the schema without every trainer having to accept it.
-_HARNESS = {
-    "lightgbm": lambda cfg: cfg.lightgbm.model_dump(),
-    "xgboost": lambda cfg: cfg.xgboost.model_dump(),
-    "torch": lambda cfg: {"options": cfg.torch.model_dump()},
-}
-
 
 def get_trainer_class(kind: str) -> type[BaseTrainer]:
     """The trainer class for a family key (config ``kind``, or ``model_type``).
@@ -80,7 +71,17 @@ def build_trainer(
         An unfitted :class:`BaseTrainer`.
     """
     trainer_cls = get_trainer_class(trainer_cfg.kind)
-    harness = _HARNESS.get(trainer_cfg.kind, lambda _: {})(trainer_cfg)
+    # Only the selected family's harness section is passed on, so an unused
+    # section can stay in the schema without every trainer having to accept
+    # it. The sklearn families take none.
+    if trainer_cfg.kind == "lightgbm":
+        harness = trainer_cfg.lightgbm.model_dump()
+    elif trainer_cfg.kind == "xgboost":
+        harness = trainer_cfg.xgboost.model_dump()
+    elif trainer_cfg.kind == "torch":
+        harness = {"options": trainer_cfg.torch.model_dump()}
+    else:
+        harness = {}
     trainer = trainer_cls(
         dict(trainer_cfg.params),
         task=task,

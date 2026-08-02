@@ -17,20 +17,25 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from ....core.run_artifacts import read_table
 from ....schemas import CleaningConfig, FeatureEngineeringConfig
 
 logger = logging.getLogger(__name__)
 
 
 def load_raw(path: str | Path, date_col: str | None = None) -> pd.DataFrame:
-    """Read the raw table; ``.csv``/``.parquet`` chosen by suffix."""
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Raw data not found: {path}")
-    if path.suffix == ".parquet":
-        df = pd.read_parquet(path)
-    else:
-        df = pd.read_csv(path)
+    """Read the raw table and parse its date column.
+
+    Args:
+        path: Raw file, ``.csv`` or ``.parquet``.
+        date_col: Column to coerce to datetime when present; unparseable
+            values become NaT rather than aborting the read, so the
+            cleaning stage reports them as a rejection count.
+
+    Returns:
+        The raw frame.
+    """
+    df = read_table(path)
     if date_col and date_col in df.columns:
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
     logger.info("Loaded %s: %d rows x %d cols", path, len(df), df.shape[1])
