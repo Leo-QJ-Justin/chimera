@@ -1,8 +1,8 @@
-"""Stage timing that never needs commenting out.
+"""Stage timing as a permanent part of a run's output.
 
-Replaces the hand-rolled ``time.time()`` stopwatch pairs that get added
-during debugging and commented out before commit: a context manager that
-logs wall time and, when a tracker is passed, records it as a metric.
+A context manager that logs wall time for a named stage and, when a
+tracker is passed, records it as a metric. It replaces ad hoc
+``time.time()`` stopwatch pairs, so timings survive past debugging.
 """
 
 import logging

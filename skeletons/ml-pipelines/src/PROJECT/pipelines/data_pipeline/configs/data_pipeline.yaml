@@ -5,14 +5,10 @@ defaults:
   - shared/base
   - _self_
 
-# Hydra's per-job chdir is OFF: every relative path below is relative to the
-# directory you launched from (the project root), which is why no pipeline
-# needs hydra.utils.get_original_cwd(). Hydra's own job dir is parked under
-# logs/ so it never mixes with outputs/<pipeline>/<timestamp>/.
-#
-# `searchpath` resolves against that same launch directory, which is what
-# lets one copy of shared/base.yaml serve all four pipelines. Run the entry
-# scripts from the project root.
+# Hydra's per-job chdir is off, so every relative path below resolves
+# against the launch directory (the project root) and no pipeline needs
+# hydra.utils.get_original_cwd(). `searchpath` resolves there too, which
+# lets one copy of shared/base.yaml serve all four pipelines.
 hydra:
   searchpath:
     - file://configs
@@ -35,13 +31,13 @@ processed_path: data/processed/model_input.parquet
 
 # Stage boundaries to pipe out for inspection: raw | cleaned | features.
 # Diagnostic only - nothing downstream reads them. Leave empty for a lean
-# run; add `cleaned` the first time someone asks "what did cleaning do?".
+# run; add `cleaned` to inspect what the cleaning stage did.
 checkpoints: [cleaned]
 checkpoint_dir: data/processed
 
-# Stable row keys. They are carried into the model-input table because the
-# training pipeline records split *membership* by these keys (D8) - never by
-# positional index.
+# Stable row keys, carried into the model-input table because the training
+# pipeline records split membership by these keys, never by positional
+# index, so a regenerated table cannot silently shift the splits.
 key_cols: [entity_id, date]
 date_col: date
 target: target
@@ -58,7 +54,7 @@ cleaning:
   strip_whitespace: true
 
 features:
-  # STATELESS features only - anything needing .fit() belongs in the training
-  # pipeline's trainer (D5).
+  # Stateless features only - anything needing .fit() lives inside a
+  # trainer, so fitted state refits per fold and serializes with the model.
   date_parts: true
   drop_columns: []

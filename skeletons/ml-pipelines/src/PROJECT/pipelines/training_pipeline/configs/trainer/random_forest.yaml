@@ -14,20 +14,15 @@ params:
 
 tune:
   # Optuna over classes/random_forest_trainer.py's own TUNABLE table
-  # (n_estimators, max_depth, min_samples_leaf, max_features).
-  #
-  # Every trial is scored by this family's own procedure CV - a candidate
-  # trainer, cross-validated exactly as the run will fit the winner, scored
-  # through evaluate(). So a trial's number and best.json's number are the
-  # same measurement.
-  #
-  # Pooled protocol (R1.10): this family's fit never reads the validation
-  # split (uses_val_in_fit = False), so the folds below run over train+val
-  # pooled, the final model is fitted on that pool, and `cv` also sets the
-  # fold count of the CV estimate that decides best.json - whether or not
-  # the search itself is enabled. Test is never touched.
+  # (n_estimators, max_depth, min_samples_leaf, max_features). Every trial is
+  # scored by this family's own procedure CV, so a trial's number and
+  # best.json's number agree.
   enabled: false
   n_trials: 20
+  # This family's fit never reads the validation split, so the folds run over
+  # train+val pooled and `cv` also sets the fold count of the CV estimate
+  # behind best.json - whether or not the search is enabled. Test is never
+  # touched. See README: Two protocols.
   cv: 3
   # A *project metric alias* - the vocabulary evaluate() and the evaluation
   # report speak (f1_macro | accuracy | rmse | mae | r2), never a sklearn

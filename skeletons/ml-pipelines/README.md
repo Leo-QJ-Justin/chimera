@@ -6,32 +6,32 @@ trainer contract. Model families (`logreg`, `random_forest`, `lightgbm`,
 `xgboost`, `torch`) plug in behind that contract, so swapping one is a
 config flag and never a code change.
 
-Design provenance: `docs/specs/2026-07-30-pipeline-skeletons-design.md`
-(decisions D1–D13, revision R1).
-
 ## Philosophy
 
-Five commitments, each of which cost somebody a week in the corpus this
-scaffold was distilled from:
+Five commitments this scaffold enforces structurally:
 
-1. **The data/training boundary is the fitted/stateless line (D5).** The
-   data pipeline cleans and derives features that depend only on a row.
-   *If it needs `.fit()`, it is not data-pipeline code* — imputers,
-   scalers and encoders live inside a trainer, where per-fold refitting is
-   free and the fitted state serializes with the model.
-2. **One data path (D4).** Predictions are produced exactly once, by the
-   inference pipeline. Evaluation consumes that file. A second
-   sample-building path for scoring drifts from the serving path, and the
-   drift surfaces as train/serve skew nobody can localise.
-3. **Runs you can find again (D10).** One timestamp per run, threaded
-   everywhere; `outputs/<pipeline>/<timestamp>/`; `latest.json` /
-   `best.json` as the *only* read path. Nothing globs a directory.
-4. **Splits you can reproduce (D8).** Seed + protocol is the generator;
-   the recorded membership (stable keys + a sha256 fingerprint) is the
-   record. Positional indices break silently when the data is regenerated.
-5. **Tracking never fails the run (D3).** MLflow is on by default with a
-   sqlite backend; every tracking call is wrapped, and a `metrics.jsonl`
-   sidecar is written whether or not tracking is live.
+1. **The data/training boundary is the fitted/stateless line.** The data
+   pipeline cleans and derives features that depend only on a row.
+   Anything that needs `.fit()` lives inside a trainer, not the data
+   pipeline, so fitted state refits per fold and serializes with the
+   model.
+2. **One data path.** Predictions are produced exactly once, by the
+   inference pipeline; evaluation only joins and scores that file. A
+   second sample-building path for scoring drifts from the serving path,
+   and the drift surfaces as a train/serve skew that has no single place
+   to trace it back to once it appears.
+3. **Runs you can find again.** One timestamp per run, threaded
+   everywhere; `outputs/<pipeline>/<timestamp>/`. Runs are found only
+   through the `latest.json`/`best.json` pointers, never by globbing
+   directories.
+4. **Splits you can reproduce.** Seed and protocol are the generator; the
+   recorded membership is the record. Split membership is recorded by
+   stable row key plus a sha256 fingerprint, never positional index, so a
+   regenerated table cannot silently shift the splits.
+5. **Tracking never fails the run.** MLflow is on by default with a
+   sqlite backend. Tracking failures warn and never abort a run;
+   artifacts already written are never lost to a logging error, and a
+   `metrics.jsonl` sidecar is written whether or not tracking is live.
 
 ## The four pipelines
 
@@ -42,7 +42,7 @@ scaffold was distilled from:
 | Inference | `run_inference.py` | a table + a recorded run | `outputs/inference/predictions.parquet` |
 | Evaluation | `run_evaluation.py` | predictions + ground truth | `outputs/evaluation/<ts>/report.{json,md}` |
 
-Each pipeline directory has the same shape (R1.4):
+Each pipeline directory has the same shape:
 
 ```
 pipelines/<name>/
@@ -101,15 +101,13 @@ subset.
 | `best.json` records | `cv_<metric>` — a k-fold estimate on the pool | `<selection.split>_<metric>` |
 | Metrics published | `dev_*`, `test_*`, `cv_*` | `train_*`, `val_*`, `test_*` |
 
-A family that never reads val during the fit has no reason to keep 15% of
-the development data out of it — and the val score it would report is not
-held out anyway once the search has already consumed that split. So it
-pools, and its selection number is an honest k-fold estimate over the pool
-(`trainer.tune.cv` folds, fresh pipeline per fold, `split.mode`'s splitter)
-rather than one small split's score. A family whose early stopping needs a
-live referee keeps val outside the fit, exactly as before. There is no
-`val_*` metric under the pooled protocol on purpose: those rows are inside
-the fit, and a metric labelled "val" gets read as held out.
+A fit with no in-fit stopping criterion never reads a validation split, so
+train and val are pooled into the fit and the run selects on a k-fold CV
+estimate over the pool (`trainer.tune.cv` folds, fresh pipeline per fold,
+`split.mode`'s splitter); families that early-stop keep val as a standing
+referee outside the fit. There is no `val_*` metric under the pooled
+protocol on purpose: those rows are inside the fit, and a metric labelled
+"val" reads as held out.
 
 Test is untouched under both, `splits.json` records all three splits under
 both, and `metadata.json`'s `training_info` says which protocol ran
@@ -117,14 +115,13 @@ both, and `metadata.json`'s `training_info` says which protocol ran
 only to the standing-val protocol; a pooled run logs one line saying it was
 ignored. Everything a run scores happens inside the one `evaluate_run`
 call, so the whole scoring stage is one timing key, `time_evaluate_s`.
-Rationale and sources: R1.10 and R1.13 in the design spec.
 
 #### Comparing families: `selection.basis: cv`
 
 The two numbers above are deliberately not rankable against each other — a
 CV estimate and one split's score are different claims, and `best.json`
 refuses to compare them. `selection.basis: cv` is how you get one yardstick
-instead (R1.11):
+instead:
 
 ```bash
 python run_training.py trainer=random_forest selection.basis=cv
@@ -135,20 +132,20 @@ python run_training.py trainer=mlp           selection.basis=cv
 Same `output_dir`, same `split` config, same `trainer.tune.cv` fold count —
 and `best.json` names the winner, without anyone reading test. Under this
 basis every family's selection number is a **procedure** CV on the train+val
-pool: each fold builds a fresh trainer of the same spec and runs that
-family's real `train` on the fold's training rows, so what is being compared
-is "preprocess, early-stop, fit *this* family", which is the only thing two
-families can be compared as. A family whose fit needs a stopping referee
-carves one out of each fold's own training rows (15%, and the chronological
-**tail** under `split.mode: temporal` — a stopping criterion that has seen
-the future leaks silently). Its shipped fit is unchanged, and it still
-publishes `train_*`/`val_*`/`test_*`; only the number `best.json` reads
-moves, to `cv_<metric>`.
+pool: cross-validation reruns the family's whole training procedure per
+fold — a fresh trainer, its own preprocessing, its own stopping carve — so
+the estimate describes the procedure the run actually ships. A family whose
+fit needs a stopping referee carves one out of each fold's own training
+rows (15%, and the chronological **tail** under `split.mode: temporal`, so
+the stopping criterion never sees rows later than the point it is evaluated
+at). Its shipped fit is unchanged, and it still publishes
+`train_*`/`val_*`/`test_*`; only the number `best.json` reads moves, to
+`cv_<metric>`.
 
-The cost is `trainer.tune.cv` extra fits per run — for a torch run that is k
-full epoch loops, which the log says out loud. And the caveat: a *tuned*
-candidate's CV estimate used hyperparameters chosen on the same pool, so it
-is optimistically biased, unevenly across families. Compare untuned
+The cost is `trainer.tune.cv` extra fits per run — for a torch run, k full
+epoch loops, which the log reports. The caveat: a *tuned* candidate's CV
+estimate used hyperparameters chosen on the same pool, so it is
+optimistically biased, unevenly across families. Compare untuned
 candidates, or give every candidate the same search budget and read the
 ranking as indicative; nested CV is the unbiased answer (Varma & Simon
 2006). Then refit the winner and report test once.
@@ -158,24 +155,24 @@ ranking as indicative; nested CV is the unbiased answer (Varma & Simon
 `metadata.json` records `model_type`, which is the family key. The loader
 maps it to a trainer class through the registry and calls that class's
 `load(run_dir)`. A LightGBM run and a torch run reload through identical
-code — which is the whole point of the contract, and the thing that would
-quietly rot if the loader ever grew a branch on model family.
+code: model-specific behavior lives behind the trainer contract, so a
+branch on model family in the loader would undo that.
 
 ### Evaluation: metrics plus the evidence
 
 Joins predictions to ground truth **by key** (the two files are written by
 different runs and need not share an order), then writes:
 
-- the metric report and, for classification, a per-class table — a macro
-  F1 of 0.62 is a different story when one class has a support of 9;
+- the metric report and, for classification, a per-class table, since a
+  macro average reads differently once per-class supports are visible;
 - an **error triage** table: misclassifications ranked by the confidence
-  of the wrong call (a confident mistake is a labelling problem, a feature
-  bug, or a genuinely hard region), or rows ranked by `|error|` for
-  regression, with `drill_down_columns` carried so a bad row can be read
-  without a second join;
+  of the wrong call (a confident mistake points at a labelling problem, a
+  feature bug, or a genuinely hard region), or rows ranked by `|error|`
+  for regression, with `drill_down_columns` carried so a bad row can be
+  read without a second join;
 - a comparison against the metric `best.json` recorded at training time,
-  labelled with what that number *was* (a validation split, or a k-fold
-  estimate on train+val) — the delta is only readable once you know;
+  labelled with the basis of that number (a validation split, or a k-fold
+  estimate on train+val), without which the delta is not readable;
 - the figures below, linked from `report.md` as relative image links.
 
 ### Reproducing a run
@@ -202,10 +199,10 @@ from PROJECT.core.splits import load_split_frames
 X, y = load_split_frames("outputs/training/20260801_101500")   # keyed train/val/test
 ```
 
-It refuses rather than approximates: if the table has moved it says which
-path the run recorded, and if its contents changed it says the data that
-run trained on no longer exists there. Pass `processed_path=` to point at
-a copy that survived.
+It refuses rather than approximates: if the table has moved it reports the
+path the run recorded, and if its contents changed it reports that the data
+that run trained on no longer exists there. Pass `processed_path=` to point
+at a surviving copy.
 
 Everything downstream of the split replays from those frames through the
 run's own `config.yaml` — the train+val pool a pooled family fits on, the
@@ -216,8 +213,8 @@ the same trajectory and lands on the same `best_params`.
 
 The evaluation pipeline rehashes the ground-truth table it scores against
 and **warns** when it is not the one the model trained on. It warns rather
-than aborting: scoring an old model against refreshed data is a fair thing
-to do on purpose, and a bad thing to do by accident.
+than aborting: scoring an old model against refreshed data is legitimate
+when deliberate and a defect when accidental.
 
 ## Diagnostic artifacts
 
@@ -227,11 +224,10 @@ artifacts at the end, so **a new artifact is a file written in the right
 place, never a new tracking call** — and the directory on disk and the
 MLflow run always show the same thing.
 
-The split is by what each figure *needs*, which is why it lands on the
-side it does. Model-based diagnostics need the estimator's internals and
-can only be drawn while it is in memory; prediction-based ones need the
-predictions table and nothing else, so drawing them at training time would
-mean scoring a sample twice (the thing the one-data-path rule prevents).
+Each figure lands on the side that has what it needs. Model-based
+diagnostics need the estimator's internals and can only be drawn while it
+is in memory; prediction-based ones need the predictions table and nothing
+else, so drawing them at training time would mean scoring a sample twice.
 
 | File | Pipeline | From | Present for |
 |---|---|---|---|
@@ -260,18 +256,18 @@ flattened into the same `history` shape the torch trainer fills
 step-wise. Trainers stay free of both tracking and plotting code.
 
 Diagnostics never fail a run. Each figure is individually wrapped in the
-same warn-and-continue pattern model logging uses: one that cannot be
-drawn costs a log line and nothing else. Kill switches are
+same warn-and-continue pattern model logging uses, so one that cannot be
+drawn costs a log line and nothing else. The switches are
 `diagnostics.enabled` and `diagnostics.shap.enabled` (training) and
 `plots.enabled` (evaluation).
 
-Why hand-rolled sklearn + matplotlib rather than `mlflow.models.evaluate`:
-that API wants fluent global run state and a served model endpoint, and
-the core `Tracker` drives `MlflowClient` with an explicit `run_id`
-precisely to avoid fluent state — plus these figures must work with
-tracking off entirely. `matplotlib` is therefore a **core** dependency;
-`shap` is the optional `explain` extra, and without it that one step logs
-a line and is skipped.
+The figures are drawn directly on sklearn and matplotlib rather than
+through `mlflow.models.evaluate`, which wants fluent global run state and
+a served model endpoint; the core `Tracker` drives `MlflowClient` with an
+explicit `run_id` to avoid that state, and these figures must also work
+with tracking off. `matplotlib` is therefore a **core** dependency; `shap`
+is the optional `explain` extra, and without it that one step logs a line
+and is skipped.
 
 ## The trainer contract
 
@@ -280,22 +276,22 @@ thin: it fixes the contract and the few services that must be identical
 across families for their numbers to be comparable. Everything a trainer
 does to a model — `evaluate` and `hyperparameter_tune` included — is
 written in that family's own class body, so a trainer file reads top to
-bottom without hopping up a hierarchy. Sibling near-duplication is the
-accepted price for that.
+bottom without following a hierarchy. Near-duplication between siblings is
+the accepted cost of that.
 
 | Member | Who writes it | Why |
 |---|---|---|
-| `_build_model()` | subclass | A **fresh**, seeded, unfitted estimator. Called per train, per CV fold, per tuning trial — a shared object is what makes cross-validation dishonest. |
+| `_build_model()` | subclass | A **fresh**, seeded, unfitted estimator. Called per train, per CV fold, per tuning trial; a shared object would leak fitted state between folds. |
 | `TUNABLE` | subclass, always | That family's search space as declared data — parameter name → default range — sitting beside the constructor those ranges are for. `trainer.tune.space` narrows any of them per run, or drops one with `false`. Annotated without a default for the same reason `uses_val_in_fit` is. |
 | `_get_param_space(trial, space)` | subclass | One trial's parameters, suggested define-by-run from the merged space, plus any value derived from a suggestion (a solver's penalty, a layer list from a width and a depth). |
 | `fit_frames(X, y)` | subclass, always | The frames this family's search and final fit see, as a `FitFrames` — `X_fit` (exactly the rows of `fit_splits`, in split order), the standing referee frames or `None`, and the `fit_splits` metadata records. The orchestrator then makes one unconditional `train(X_fit, y_fit, X_ref, y_ref)` call. |
 | `train(X, y, X_val, y_val)` | subclass | Validation data is in the *signature* because three of the five trainers need it during the fit. |
-| `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It is the family's declaration of its protocol (above): the family's own three protocol methods act on it, `cross_validate` reads it for the fold carve, and the base annotates it without defaulting it — a new trainer that omits it fails the contract suite rather than inheriting a protocol nobody chose. |
+| `uses_val_in_fit` | subclass, always | Does this family's `train` consume val? It is the family's declaration of its protocol (above): the family's own three protocol methods act on it, `cross_validate` reads it for the fold carve, and the base annotates it without defaulting it, so a new trainer that omits it fails the contract suite rather than inheriting an unchosen protocol. |
 | `predict` / `predict_proba` | subclass / optional | `predict_proba` returns None when the family has none, rather than faking probabilities. |
 | `evaluate(X, y, metrics=…)` | subclass, always | Three identical lines per family (`check_fitted`, then `compute_metrics` over its own predictions) and nothing inherited. The definitions still come from one place — `evaluation_pipeline/modules/metrics.py` — so no family scores itself with its own metric, but the measurement is visible in the file whose predictions it measures. |
-| `evaluate_run(X, y, X_fit, y_fit, …)` | subclass, always | Every number the run publishes, in the terms its protocol can defend — the pooled families score `dev_*`/`test_*` plus the CV estimate, the standing-val families score `train_*`/`val_*`/`test_*` and add the CV estimate under `selection.basis: cv`. Takes `metric`/`cv`/`basis`/`split` as plain values; no trainer ever receives a config object or the tracker. |
+| `evaluate_run(X, y, X_fit, y_fit, …)` | subclass, always | Every number the run publishes, in the terms its protocol supports — the pooled families score `dev_*`/`test_*` plus the CV estimate, the standing-val families score `train_*`/`val_*`/`test_*` and add the CV estimate under `selection.basis: cv`. Takes `metric`/`cv`/`basis`/`split` as plain values; no trainer ever receives a config object or the tracker. |
 | `selection_key(metric, basis, split)` | subclass, always | `(basis, metric key)` — what `best.json` means for this run. Pure and callable unfitted, because the tracker params, the metadata envelope and the pointer all name the basis before there is a model to ask. |
-| `cross_validate(X, y, cv, metrics)` | **base** | A fresh **trainer** per fold running this family's real `train` — including, for a family that early-stops, a stopping subset carved out of that fold's own rows (R1.11). The splitter comes from `split.mode` (D9), never a hardcoded `TimeSeriesSplit`. |
+| `cross_validate(X, y, cv, metrics)` | **base** | A fresh **trainer** per fold running this family's real `train` — including, for a family that early-stops, a stopping subset carved out of that fold's own rows. The splitter follows the run's configured `split.mode`, never a hardcoded `TimeSeriesSplit`. |
 | `hyperparameter_tune(...)` | subclass, always | Abstract on the base and abstract *only* — no shared sweeper, no hooks. Every trial is scored by the procedure the family actually ships (pooled families through `cross_validate`, standing-val families on a carved 20% holdout their trials early-stop against), in project metric aliases. Winners are folded into `params` so the next `train` actually uses them. |
 | `log_model(tracker, example)` | subclass | The fitted model in that family's own MLflow flavor. See below. |
 | `save(run_dir) → files map` | subclass | Returns `{kind: filename}` verbatim for `metadata.json`. Filenames, never paths. |
@@ -320,13 +316,12 @@ lookup table has nowhere to put that.
 
 Nothing is shared between the tabular families beyond the base: each
 writes its own `Pipeline(preprocess, model)` assembly, its own joblib
-save/load pair and its own MLflow flavor call. Reading four near-identical
-`save` methods is the price of never having to read three files to find out
-what one family does.
+save/load pair and its own MLflow flavor call. Four near-identical `save`
+methods are the cost of each family being readable in one file.
 
-All four of them serialize preprocessing and model **together** (D6), so the
-inference path cannot tell them apart and preprocessing can never drift
-from the model it was fitted beside.
+All four of them serialize preprocessing and model **together**, so they
+cannot drift apart at serving time and the inference path cannot tell them
+apart.
 
 Adding a family: implement the class, add one entry to `TRAINERS` in
 `classes/__init__.py`, add `configs/trainer/<kind>.yaml`, and add it to
@@ -339,13 +334,13 @@ Each trainer logs its own fitted model in its own MLflow flavor
 (`mlflow.sklearn`, `mlflow.lightgbm`, `mlflow.xgboost`, `mlflow.pytorch`)
 after the fit, via `save_model` + `tracker.log_artifacts` — never the
 fluent `mlflow.<flavor>.log_model`, because the core `Tracker` drives
-`MlflowClient` with an explicit `run_id` precisely to avoid fluent global
-state. Signature inference is best-effort; a failure warns and the run
-keeps everything it already wrote.
+`MlflowClient` with an explicit `run_id` to avoid fluent global state.
+Signature inference is best-effort: a failure warns, and artifacts already
+written are never lost to a logging error.
 
-Autolog is deliberately not offered: it dumps per-version parameter sets
-nobody curated, fires on every cross-validation and tuning fit rather than
-on the run's model, and cannot attach this run's split fingerprints.
+Autolog is deliberately not offered. It records per-version parameter sets
+that nobody selected, fires on every cross-validation and tuning fit rather
+than on the run's model, and cannot attach this run's split fingerprints.
 
 Where a flavor stores a bare booster or module rather than a pipeline
 (lightgbm, xgboost, torch), the logged input example is the **transformed**
@@ -396,7 +391,7 @@ rejected with that explanation; write
 
 ```
 configs/
-  shared/base.yaml     seed, timezone, logging, mlflow  (the ONLY shared file)
+  shared/base.yaml     seed, timezone, logging, mlflow  (the only shared file)
   logging.yaml         dictConfig: console + level-split rotating files
 src/PROJECT/pipelines/<name>/configs/<name>.yaml
 src/PROJECT/pipelines/training_pipeline/configs/trainer/*.yaml
@@ -441,21 +436,24 @@ and adapt the env prefix in the pre-push hooks.
 - One seed source (`seed`), threaded explicitly and persisted into run
   metadata.
 - Tests derive their constants from **schema defaults**, never from
-  `configs/` — those files belong to the analyst, and a test that reads
-  them fails for the wrong reason the first time someone tunes a knob.
+  `configs/` — those files belong to the analyst, so a test that reads
+  them fails as soon as a knob is tuned.
 - Every test runs with `mlflow.enabled=false` set declaratively, the same
   switch production uses, so the suite is hermetic without monkeypatching.
 - Google-style docstrings; comments state the reason, not the action.
 
 ## Decision tables to fill in
 
-Two choices the scaffold deliberately leaves to the project (record the
-verdict in the project's design doc, not in a comment):
+Three choices the scaffold deliberately leaves to the project. Record the
+decision in the project's own documentation, not in a comment:
 
-- **Split protocol (D9).** i.i.d. tabular → stratified holdout, `StratifiedKFold`
+- **Split protocol.** i.i.d. tabular → stratified holdout, `StratifiedKFold`
   for CV; time series → temporal boundaries and `TimeSeriesSplit`, never
   shuffled; grouped entities → `GroupKFold`. Set `split.mode`; it drives
-  both the holdout split and the CV splitter used by tuning.
+  both the holdout split and the CV splitter used by tuning. Under
+  temporal mode folds are chronological, so nothing about a fit —
+  including its early-stopping monitor — sees rows later than the point it
+  is evaluated at.
 - **Final-fit doctrine.** Test is never trained on, under either protocol —
   what is left to decide is what happens to *val*, and the scaffold already
   answers that per family (`uses_val_in_fit`): a family that early-stops on
@@ -464,7 +462,7 @@ verdict in the project's design doc, not in a comment):
   only if you want a family to depart from that — e.g. keeping a booster's
   val split out of the final fit permanently, or pooling for a family the
   scaffold does not ship.
-- **Cross-family comparison (R1.11).** Whether the project ranks families on
+- **Cross-family comparison.** Whether the project ranks families on
   each one's own protocol (`selection.basis: auto`, cheap, and the two kinds
   of number are then not comparable) or on one procedure-CV yardstick
   (`selection.basis: cv`, k extra fits per run, one `best.json` for all of

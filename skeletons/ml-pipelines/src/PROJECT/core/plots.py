@@ -1,4 +1,4 @@
-"""Diagnostic figures, hand-rolled on matplotlib + sklearn.
+"""Diagnostic figures, drawn directly on matplotlib and sklearn.
 
 Stateless helpers: each takes arrays (or a history record list), writes one
 PNG, and returns the path it wrote. Nothing here reads config, touches the
@@ -6,22 +6,12 @@ tracker, or knows which pipeline called it - the run directory is uploaded
 wholesale at the end of a run, so a file written into ``<run_dir>/plots/``
 becomes an MLflow artifact with no tracking code of its own.
 
-Two decisions worth knowing before editing:
-
-- **Hand-rolled, not ``mlflow.models.evaluate``.** The evaluate API wants a
-  live fluent run, and its score-based artifacts want a loadable model
-  rather than a predictions table; the core ``Tracker`` drives
-  ``MlflowClient`` with an explicit ``run_id`` precisely to avoid fluent
-  global state, and these figures must also work with tracking off. A
-  curated set of plots the project chose beats a generated set nobody did.
-- **Headless by construction.** The Agg backend is pinned *before* pyplot
-  is imported, because pipelines run on workers with no display, and every
-  helper closes its figure - an unclosed figure leaks across a test suite
-  and eventually trips matplotlib's open-figure warning.
-
-Callers wrap each call in the try/except-warn pattern the pipelines use for
-model logging: a figure that could not be drawn costs the run one warning
-line, never the artifacts it already wrote.
+Figures are drawn directly rather than through ``mlflow.models.evaluate``,
+which wants a live fluent run and a loadable model; these helpers must also
+work with tracking off. Callers wrap each call in the try/except-warn
+pattern the pipelines use for model logging, so a figure that could not be
+drawn costs the run one warning line and never the artifacts it already
+wrote.
 """
 
 import logging
@@ -30,8 +20,8 @@ from pathlib import Path
 import matplotlib
 import numpy as np
 
-# Before pyplot, not after: the backend is chosen at pyplot import time and
-# the default one needs a display.
+# Before pyplot, not after: the backend is chosen at pyplot import time, and
+# the default one needs a display that a pipeline worker does not have.
 matplotlib.use("Agg")
 
 from matplotlib import pyplot as plt  # noqa: E402
@@ -51,10 +41,9 @@ def plot_training_curves(history: list[dict], out: str | Path) -> Path | None:
     """Per-iteration curves from a trainer's history records.
 
     Series are grouped by metric rather than by split, so ``train_loss``
-    and ``val_loss`` share an axes and the gap between them - the thing
-    anyone actually reads a curve for - is visible without flipping
-    between images. Series with no ``train_``/``val_`` prefix (a learning
-    rate, say) get an axes of their own.
+    and ``val_loss`` share an axes and the gap between them is visible
+    without flipping between images. Series with no ``train_``/``val_``
+    prefix, such as a learning rate, get an axes of their own.
 
     Args:
         history: Records as trainers record them, each carrying ``epoch``
@@ -109,7 +98,16 @@ def _curve_groups(history: list[dict]) -> dict[str, dict[str, list[float]]]:
 
 
 def plot_confusion_matrix(y_true, y_pred, out: str | Path) -> Path:
-    """Counts per (true, predicted) class pair, annotated in the cells."""
+    """Counts per (true, predicted) class pair, annotated in the cells.
+
+    Args:
+        y_true: Ground truth labels.
+        y_pred: Predicted labels.
+        out: Destination PNG path.
+
+    Returns:
+        The written path.
+    """
     from sklearn.metrics import confusion_matrix
 
     labels = _class_labels(y_true, y_pred)
@@ -146,9 +144,8 @@ def plot_roc_curves(
     """ROC curve(s) plus the AUC scalar(s) the caller logs as metrics.
 
     Binary problems get one curve; multiclass gets one-vs-rest curves
-    overlaid on a single axes with a legend, which is what makes "class 3
-    is the one dragging the macro average down" a glance rather than a
-    calculation.
+    overlaid on a single axes with a legend, so the class pulling the macro
+    average down is visible against the others.
 
     Args:
         y_true: Ground truth labels.
@@ -186,8 +183,16 @@ def plot_pr_curves(
 ) -> tuple[Path, dict[str, float]]:
     """Precision-recall curve(s) plus the average-precision scalar(s).
 
-    The curve to read on an imbalanced problem: ROC's false-positive rate
-    is diluted by a large negative class, average precision is not.
+    Preferred on an imbalanced problem: ROC's false-positive rate is
+    diluted by a large negative class, average precision is not.
+
+    Args:
+        y_true: Ground truth labels.
+        proba: ``(n_samples, n_classes)`` probabilities, in ``classes``
+            order.
+        out: Destination PNG path.
+        classes: Class labels in column order; inferred from ``y_true``
+            when omitted.
 
     Returns:
         ``(path, metrics)`` with ``pr_auc`` (macro average for multiclass)
@@ -250,6 +255,19 @@ def plot_calibration_curve(
     Multiclass calibration is per-class and reads as a different plot, so
     this refuses rather than quietly drawing one class's version of it.
 
+    Args:
+        y_true: Ground truth labels.
+        proba: Positive-class probabilities, or an ``(n_samples, 2)``
+            probability matrix in ``classes`` order.
+        out: Destination PNG path.
+        classes: Class labels in column order; inferred from ``y_true``
+            when omitted.
+        n_bins: Number of probability bins the observed frequency is
+            averaged within.
+
+    Returns:
+        The written path.
+
     Raises:
         ValueError: If the problem is not binary.
     """
@@ -284,8 +302,17 @@ def plot_calibration_curve(
 def plot_residuals(y_true, y_pred, out: str | Path) -> Path:
     """Residual distribution beside predicted-vs-actual, on one figure.
 
-    The pair is the point: the histogram shows bias, the scatter against
-    the identity line shows where in the range the model bends.
+    The two panels answer different questions: the histogram shows bias,
+    the scatter against the identity line shows where in the target range
+    the model departs from it.
+
+    Args:
+        y_true: Ground truth values.
+        y_pred: Predicted values.
+        out: Destination PNG path.
+
+    Returns:
+        The written path.
     """
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
@@ -327,9 +354,19 @@ def plot_feature_importances(
     Ranked by magnitude so signed coefficients sort by influence rather
     than by sign, and drawn horizontally because feature names are long.
 
+    Args:
+        names: Feature names, aligned with ``values``.
+        values: Importance or coefficient per feature.
+        out: Destination PNG path.
+        top_n: Maximum number of bars to draw.
+        title: Chart title; the drawn and total counts are appended.
+
+    Returns:
+        The written path.
+
     Raises:
-        ValueError: If ``names`` and ``values`` disagree in length - a
-            mislabelled importance chart is worse than none.
+        ValueError: If ``names`` and ``values`` disagree in length, which
+            would label the bars with the wrong features.
     """
     values = np.asarray(values, dtype=float)
     if len(names) != len(values):
@@ -352,10 +389,16 @@ def plot_feature_importances(
 def save_current_figure(out: str | Path) -> Path:
     """Write whatever a third-party helper just drew, then close it.
 
-    The escape hatch for libraries that plot onto the current figure
-    instead of returning one (SHAP's ``beeswarm`` and ``bar``). Keeping it
-    here means no caller outside this module imports pyplot, so the Agg
-    pin above stays the only backend decision in the project.
+    Supports libraries that plot onto the current figure instead of
+    returning one, such as SHAP's ``beeswarm`` and ``bar``. Keeping it here
+    means no caller outside this module imports pyplot, so the Agg pin
+    above stays the only backend decision in the project.
+
+    Args:
+        out: Destination PNG path.
+
+    Returns:
+        The written path.
     """
     return _write(plt.gcf(), out)
 

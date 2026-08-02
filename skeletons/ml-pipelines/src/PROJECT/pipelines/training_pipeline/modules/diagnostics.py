@@ -156,8 +156,8 @@ def _attribution(estimator) -> tuple[np.ndarray | None, str]:
     """The estimator's per-feature vector, and what to call it.
 
     Multiclass coefficients are one row per class; they are reduced to
-    mean absolute weight, because a chart of a (classes x features) matrix
-    is not a chart anyone reads.
+    mean absolute weight, because a (classes x features) matrix does not
+    plot as a readable chart.
     """
     importances = getattr(estimator, "feature_importances_", None)
     if importances is not None:

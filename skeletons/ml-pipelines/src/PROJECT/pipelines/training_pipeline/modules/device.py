@@ -48,7 +48,7 @@ def setup_device(cfg) -> "torch.device":  # noqa: F821 (torch imported lazily)
             os.environ["CUDA_DEVICE_ORDER"],
         )
 
-    import torch  # noqa: PLC0415 (deliberate: must follow the env writes)
+    import torch  # noqa: PLC0415 (required: must follow the env writes)
 
     requested = str(_cfg_get(cfg, "device", "auto"))
     if requested != "auto":

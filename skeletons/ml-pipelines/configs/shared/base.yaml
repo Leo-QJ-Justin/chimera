@@ -2,10 +2,8 @@
 #
 # Sections every pipeline shares. `@package _global_` merges these at the
 # config root instead of under a `shared:` key, so the pydantic schemas see
-# `seed`, `logging`, `mlflow` directly.
-#
-# Pipeline configs list this group FIRST and `_self_` LAST, so a pipeline
-# file can override any value here (e.g. its own log_prefix).
+# `seed`, `logging`, `mlflow` directly. Pipeline configs list this group
+# first and `_self_` last, so any value here can be overridden downstream.
 
 seed: 42
 timezone: Asia/Singapore
@@ -21,28 +19,10 @@ logging:
   config_path: configs/logging.yaml
 
 mlflow:
-  # ON by default: this scaffold is production-level, and a run nobody can
-  # find again is not a production run. The sqlite backend needs no server
-  # (`mlflow ui --backend-store-uri sqlite:///mlflow.db` to browse), and
-  # tracking failures only ever warn - they never abort a pipeline.
-  #
-  # Turn it off per invocation with `mlflow.enabled=false`; that is what the
-  # test suite does, so tests stay hermetic. The <run_dir>/metrics.jsonl
-  # sidecar is written either way.
-  #
-  # Every file a pipeline writes into its run directory is uploaded as an
-  # MLflow artifact at the end of that run - metadata, config snapshot,
-  # split record, and the diagnostic figures under <run_dir>/plots/. So a
-  # new artifact is a file written in the right place, never a new
-  # tracking call, and the run directory on disk and the MLflow run always
-  # show the same thing.
-  #
-  # There is deliberately no autolog switch. Each trainer logs its own model
-  # in its own MLflow flavor after the fit (BaseTrainer.log_model), because
-  # autolog dumps per-version parameter sets nobody curated, fires on every
-  # cross-validation and tuning fit rather than on the run's model, and
-  # cannot attach this run's split fingerprints - which is the one thing
-  # that makes a logged model traceable back to the data it saw.
+  # On by default; the sqlite backend needs no server. Tracking failures
+  # warn and never abort a run. Disable per invocation with
+  # `mlflow.enabled=false`; <run_dir>/metrics.jsonl is written either way.
+  # See README: Diagnostic artifacts / Model logging.
   enabled: true
   tracking_uri: sqlite:///mlflow.db
   experiment_name: PROJECT

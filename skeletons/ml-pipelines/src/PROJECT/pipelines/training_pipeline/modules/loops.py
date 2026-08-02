@@ -8,8 +8,8 @@ checkpoints, schedulers, or config. Two properties are load-bearing:
   means - the latter over-weights a ragged final batch.
 - **Injectable metric.** ``metric_fn`` is a parameter, not a hardcoded
   ``torch.max(outputs, 1)`` accuracy. Baking classification accuracy into
-  the loop is what forced the "``Const - error``" metric hack in the
-  corpus (a regression run reusing a higher-is-better harness).
+  the loop would force a regression run to invert its error into a
+  ``Const - error`` score just to reuse the harness.
 """
 
 import logging

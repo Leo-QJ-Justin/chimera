@@ -1,16 +1,14 @@
-"""The project's metric definitions - one home, four consumers.
+"""The project's metric definitions: one home, several consumers.
 
 The training pipeline scores its splits, the trainers implement
-``evaluate`` and the evaluation pipeline writes its report all through
-these functions. The import direction (training -> evaluation) looks
-backwards for a moment and is deliberate: metrics belong to the pipeline
-that *reports* them, and a second definition beside the trainer is how a
-project ends up with a val F1 that disagrees with its report's F1.
+``evaluate`` and the evaluation pipeline writes its report, all through
+these functions. The import direction (training -> evaluation) is
+deliberate: metrics belong to the pipeline that reports them, and a second
+definition beside the trainer produces a validation F1 that disagrees with
+the report's F1. A metric added here flows into ``best.json``, the tracker
+and the evaluation report at once; one added inline does not.
 
-Add a metric here and it flows into ``best.json``, the tracker, and the
-evaluation report at once. Add it inline in a pipeline and it does not.
-
-Logging convention (D12): scalars go through the logger; the
+Logging convention: scalars go through the logger, while the
 pre-formatted ``classification_report`` block goes through ``print``,
 because a per-line level prefix mangles an aligned table.
 """
@@ -49,12 +47,12 @@ METRIC_FUNCTIONS: dict[str, Callable] = {
     "r2": r2_score,
 }
 
-# Which way is "better", per alias. Read by anything that has to optimise a
-# metric it was handed without also being told a direction - the trainers'
-# hyperparameter_tune, whose `direction` config defaults to null. It is a
-# table rather than a "maximize unless told otherwise" default because the
-# error-like aliases would then be silently searched the wrong way round,
-# and a search for the worst model still finishes and still writes a run.
+# Which way is "better", per alias. Read by anything that must optimise a
+# metric it was handed without also being told a direction, such as the
+# trainers' hyperparameter_tune whose `direction` config defaults to null.
+# A table rather than a "maximize unless told otherwise" default: the
+# error-like aliases would then be searched the wrong way round, and a
+# search for the worst model still finishes and still writes a run.
 METRIC_DIRECTIONS: dict[str, str] = {
     "accuracy": "maximize",
     "f1_macro": "maximize",
@@ -79,6 +77,13 @@ def resolve_metric(metric: str | Callable) -> tuple[str, Callable]:
     becomes something else, and so a report and a ``best.json`` computed
     months apart still mean the same thing.
 
+    Args:
+        metric: A project alias, an ``sklearn.metrics`` function name, or
+            a callable taking ``(y_true, y_pred)``.
+
+    Returns:
+        ``(name, function)``, where the name is what gets reported.
+
     Raises:
         ValueError: On a name that resolves nowhere, listing the aliases.
     """
@@ -98,7 +103,7 @@ def resolve_metric(metric: str | Callable) -> tuple[str, Callable]:
 def compute_metrics(
     y_true, y_pred, task: str = "classification", metrics: list | None = None
 ) -> dict[str, float]:
-    """The project's metric dict for a task.
+    """Compute the project's metric dict for a task.
 
     Args:
         y_true: Ground truth.
@@ -120,8 +125,16 @@ def compute_metrics(
 def per_class_table(y_true, y_pred) -> pd.DataFrame:
     """Per-class precision/recall/f1/support as a frame.
 
-    The breakdown the scalar metric dict flattens away: a macro F1 of 0.62
-    is a very different story when one class has a support of 9.
+    The breakdown the scalar metric dict flattens away: a macro average
+    reads differently once the per-class supports are visible.
+
+    Args:
+        y_true: Ground truth labels.
+        y_pred: Predicted labels.
+
+    Returns:
+        One row per class plus sklearn's average rows, with a ``class``
+        column naming each.
     """
     report = classification_report(y_true, y_pred, zero_division=0, output_dict=True)
     rows = [

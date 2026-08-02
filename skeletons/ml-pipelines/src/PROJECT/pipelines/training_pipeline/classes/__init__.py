@@ -1,15 +1,15 @@
 """Trainers: one class per model family, all behind ``BaseTrainer``.
 
-``trainer.kind`` **is** the family - the same string names the config
-group file, the class below, and ``model_type`` in ``metadata.json``.
-Two call sites use this table: the training pipeline builds a trainer from
-config, the inference pipeline resolves one from a saved run's
-``model_type``. One dict, so "which families exist" cannot drift into two
+``trainer.kind`` is the family: the same string names the config group
+file, the class below, and ``model_type`` in ``metadata.json``. Two call
+sites use this table - the training pipeline builds a trainer from config,
+the inference pipeline resolves one from a saved run's ``model_type`` - so
+keeping it one dict stops "which families exist" from drifting into two
 ``if`` chains.
 
-**Imports are lazy on purpose.** LightGBM, XGBoost and torch are optional
-extras; importing them here would make ``import training_pipeline`` fail on
-a machine that only runs the sklearn families. The import happens when the
+Imports are lazy. LightGBM, XGBoost and torch are optional extras, and
+importing them here would make ``import training_pipeline`` fail on a
+machine that only runs the sklearn families. The import happens when the
 family is asked for, and the guarded import inside each module turns a
 missing extra into a sentence naming the install.
 """
@@ -74,7 +74,7 @@ def build_trainer(
         seed: The single run seed.
         numeric_features: Numeric feature columns, in contract order.
         categorical_features: Categorical feature columns, in contract order.
-        cv_mode: The run's ``split.mode``, which picks the CV splitter (D9).
+        cv_mode: The run's ``split.mode``, which picks the CV splitter.
 
     Returns:
         An unfitted :class:`BaseTrainer`.

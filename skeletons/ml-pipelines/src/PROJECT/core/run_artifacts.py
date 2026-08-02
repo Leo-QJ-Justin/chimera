@@ -1,8 +1,8 @@
 """Run artifact discipline: timestamps, pointers, metadata, snapshots.
 
 One timestamp is generated per run and threaded everywhere. Outputs live
-under ``base/<timestamp>/``. Two pointer files at the base dir are the
-only read path - nothing globs directories:
+under ``base/<timestamp>/``. Runs are found only through the
+latest.json/best.json pointers, never by globbing directories:
 
 - ``latest.json``: the most recent run.
 - ``best.json``: monotonic improvement on a declared ``(metric, mode)``.
@@ -76,10 +76,27 @@ def make_run_dir(base: str | Path, timestamp: str) -> Path:
 
 
 def save_latest_pointer(base: str | Path, timestamp: str) -> None:
+    """Point ``latest.json`` at this run.
+
+    Args:
+        base: Directory holding the per-run subdirectories.
+        timestamp: Run timestamp to record.
+    """
     _write_json(Path(base) / "latest.json", {"timestamp": timestamp})
 
 
 def get_latest_timestamp(base: str | Path) -> str:
+    """Read the timestamp of the most recent run.
+
+    Args:
+        base: Directory holding the per-run subdirectories.
+
+    Returns:
+        The timestamp recorded in ``latest.json``.
+
+    Raises:
+        FileNotFoundError: If no run has written a pointer yet.
+    """
     pointer = Path(base) / "latest.json"
     if not pointer.exists():
         raise FileNotFoundError(f"No latest.json under {base}")
@@ -96,6 +113,8 @@ def save_best_pointer(
     """Update ``best.json`` only on monotonic improvement.
 
     Args:
+        base: Directory holding the per-run subdirectories.
+        timestamp: Run timestamp to record if this run wins.
         value: The monitored metric's value for this run.
         metric: Metric name, recorded in the pointer so mismatched
             comparisons fail loudly instead of silently.
@@ -129,6 +148,17 @@ def save_best_pointer(
 
 
 def get_best_info(base: str | Path) -> dict:
+    """Read the best-run pointer.
+
+    Args:
+        base: Directory holding the per-run subdirectories.
+
+    Returns:
+        The recorded ``timestamp``, ``metric``, ``mode`` and ``value``.
+
+    Raises:
+        FileNotFoundError: If no run has qualified as best yet.
+    """
     best_file = Path(base) / "best.json"
     if not best_file.exists():
         raise FileNotFoundError(f"No best.json under {base}")
@@ -161,10 +191,25 @@ def save_metadata(
 ) -> Path:
     """Write the ``metadata.json`` reload envelope.
 
-    ``files`` maps artifact kind to filename so the loader never guesses.
-    ``upstream_config`` embeds the data-pipeline config that produced the
-    training frame, so inference replays training-time preprocessing
-    regardless of what config files say later.
+    Args:
+        run_dir: Directory the envelope is written into.
+        model_type: Trainer family identifier, used to pick a loader.
+        timestamp: Run timestamp this directory belongs to.
+        feature_columns: Feature names in the exact order the model was
+            fitted on; load-time validation compares against this list.
+        target_columns: Target names the model predicts.
+        hyperparameters: Resolved hyperparameters of the fitted model.
+        training_info: Summary of how the fit went, such as row counts,
+            fold scores and stopping behaviour.
+        files: Artifact kind to filename, so the loader never guesses at
+            filenames.
+        upstream_config: Data-pipeline config that produced the training
+            frame. Embedding it lets inference replay training-time
+            preprocessing regardless of what config files say later.
+        tz: Timezone for the ``created_at`` stamp.
+
+    Returns:
+        Path to the written ``metadata.json``.
     """
     metadata = {
         "model_type": model_type,
@@ -184,6 +229,17 @@ def save_metadata(
 
 
 def load_metadata(run_dir: str | Path) -> dict:
+    """Read a run's ``metadata.json``.
+
+    Args:
+        run_dir: Directory of the run to reload.
+
+    Returns:
+        The envelope written by :func:`save_metadata`.
+
+    Raises:
+        FileNotFoundError: If the directory holds no metadata envelope.
+    """
     path = Path(run_dir) / "metadata.json"
     if not path.exists():
         raise FileNotFoundError(f"No metadata.json in {run_dir}")
@@ -195,6 +251,17 @@ def validate_feature_columns(metadata: dict, expected: list[str] | None) -> list
 
     The first loaded model's columns become canonical; every subsequent
     load must match by exact list equality.
+
+    Args:
+        metadata: Envelope from :func:`load_metadata`.
+        expected: Canonical column order, or ``None`` on the first load.
+
+    Returns:
+        The metadata's feature columns, now canonical.
+
+    Raises:
+        ValueError: If the model was saved with a different feature set
+            or a different column order.
     """
     columns = metadata["feature_columns"]
     if expected is not None and columns != expected:
@@ -209,12 +276,19 @@ def validate_feature_columns(metadata: dict, expected: list[str] | None) -> list
 
 
 def file_fingerprint(path: str | Path, chunk_size: int = 1 << 20) -> str:
-    """sha256 over a file's bytes: the content identity of an input table.
+    """Hash a file's bytes to identify the exact content a run consumed.
 
-    Truncated to 16 hex like ``core.splits.fingerprint``, so a split
-    fingerprint and a data fingerprint read alike side by side in a params
-    table. Read in chunks because the model-input table is the one file in
-    a run that is allowed to be large.
+    Truncated to 16 hex characters like ``core.splits.fingerprint``, so a
+    split fingerprint and a data fingerprint read alike side by side in a
+    params table. Read in chunks because the model-input table is the one
+    file in a run that is allowed to be large.
+
+    Args:
+        path: File to hash.
+        chunk_size: Bytes read per iteration.
+
+    Returns:
+        The first 16 hex characters of the sha256 digest.
     """
     digest = hashlib.sha256()
     with open(path, "rb") as f:
@@ -256,17 +330,23 @@ def get_environment_info() -> dict:
 
 
 def record_environment(run_dir: str | Path) -> Path:
-    """Write ``environment.json``: the interpreter and the versions that ran.
+    """Write ``environment.json``: the interpreter and versions that ran.
 
-    The companion to the git commit and the config snapshot - those pin
-    the code and the knobs, this pins what the code was run against, which
-    is the remaining reason a rerun of a pinned run can still disagree
-    (a solver default, a serialisation format, a fitted-model pickle).
+    The git commit pins the code and the config snapshot pins the knobs;
+    this pins what the code was run against, which is the remaining reason
+    a rerun of an otherwise pinned run can disagree - a solver default, a
+    serialisation format, a fitted-model pickle.
 
-    Distribution names rather than import names, resolved through
-    ``importlib.metadata``, so the file lists what a ``uv sync`` would have
-    to install; the inline block in ``metadata.json`` stays a glance-level
+    Versions are resolved by distribution name through
+    ``importlib.metadata``, so the file lists what an install would have to
+    provide. The inline block in ``metadata.json`` stays a glance-level
     summary keyed the way the imports are.
+
+    Args:
+        run_dir: Directory the file is written into.
+
+    Returns:
+        Path to the written ``environment.json``.
     """
     packages = {}
     for name in RECORDED_PACKAGES:
@@ -285,8 +365,15 @@ def record_environment(run_dir: str | Path) -> Path:
 def save_config_snapshot(run_dir: str | Path, config: dict) -> Path:
     """Dump the post-merge, post-override config that actually ran.
 
-    The snapshot records what ran, not what any single file said - CLI
+    The snapshot records what ran, not what any single file said, so CLI
     overrides and runtime injections must already be applied to ``config``.
+
+    Args:
+        run_dir: Directory the snapshot is written into.
+        config: Fully resolved configuration mapping.
+
+    Returns:
+        Path to the written ``config.yaml``.
     """
     import yaml
 

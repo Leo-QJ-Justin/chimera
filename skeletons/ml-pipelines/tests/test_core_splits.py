@@ -1,3 +1,5 @@
+"""Split records: stable keys, fingerprints, and replaying a run's frames."""
+
 from pathlib import Path
 
 import pandas as pd

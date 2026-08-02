@@ -6,10 +6,11 @@ boundary to the writer as a checkpoint. The stateless work lives in
 the manifest and the row counters live in
 ``classes/dataset_writer.py``.
 
-The output is the **full** dataset: no splitting happens here. It carries
-the declared ``key_cols`` so the training pipeline can record split
-membership by stable key rather than positional index (D8), plus a
-sidecar manifest that the training run embeds as ``upstream_config``.
+The output is the full dataset: no splitting happens here. It carries the
+declared ``key_cols`` so the training pipeline can record split membership
+by stable row key, never positional index, and a regenerated table cannot
+silently shift the splits. A sidecar manifest travels with it, which the
+training run embeds as ``upstream_config``.
 """
 
 import logging
@@ -29,7 +30,8 @@ class DataPipeline:
     """Orchestrates the stateless half of the data path."""
 
     def __init__(self, config: DataPipelineConfig, log_path: str | Path | None = None):
-        """
+        """Initialize the pipeline.
+
         Args:
             config: Validated data pipeline config.
             log_path: The entry script's log file, uploaded as the last
@@ -74,8 +76,9 @@ class DataPipeline:
             with stage_timer("write_processed", tracker):
                 processed_path, manifest = writer.write(df)
 
-            # Row-count reasons are metrics, not log prose: a run that drops
-            # 40% of its rows should be visible on a chart, not in a grep.
+            # Row-count reasons are recorded as metrics rather than log
+            # prose, so a run that drops a large share of its rows shows up
+            # on a chart across runs.
             tracker.log_params(
                 {"raw_path": config.raw_path, "processed_path": str(processed_path)}
             )

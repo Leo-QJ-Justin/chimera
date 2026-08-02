@@ -1,18 +1,17 @@
 """Error triage: which rows went wrong, and how badly.
 
-A metric is a verdict; triage is the evidence. The aggregate says "macro
-F1 0.71" and stops there, which is exactly the point at which someone
-opens a notebook and reinvents this join by hand - badly, and differently
-each time.
+An aggregate metric states the outcome; triage shows the rows behind it.
+Producing the ranking here keeps it reproducible instead of rebuilt by
+hand for each investigation.
 
 Two rankings, one per task:
 
-- **Classification**: misclassified rows ordered by the model's
-  confidence in the wrong answer. A confident mistake is a labelling
-  problem, a feature bug, or a genuinely hard region; an unconfident one
-  is usually just the decision boundary.
-- **Regression**: rows ordered by ``|error|``, with the signed residual
-  kept so systematic bias is visible rather than averaged away.
+- Classification: misclassified rows ordered by the model's confidence in
+  the wrong answer. A confident mistake points at a labelling problem, a
+  feature bug, or a genuinely hard region; an unconfident one usually sits
+  on the decision boundary.
+- Regression: rows ordered by ``|error|``, with the signed residual kept
+  so systematic bias is visible rather than averaged away.
 """
 
 import logging
@@ -78,9 +77,15 @@ def predicted_confidence(frame: pd.DataFrame, prediction_col: str) -> pd.Series:
     """Probability the model assigned to the class it predicted.
 
     Reads the ``proba_<label>`` columns the inference pipeline writes.
-    Returns NaN throughout when the trainer exposed no probabilities -
-    the ranking then degrades to "arbitrary but stable", which is honest,
-    rather than inventing a confidence.
+
+    Args:
+        frame: Joined predictions, possibly carrying ``proba_*`` columns.
+        prediction_col: Column holding the predicted label.
+
+    Returns:
+        The predicted class's probability per row, or all-NaN when the
+        trainer exposed no probabilities. The ranking then falls back to
+        an arbitrary but stable order rather than an invented confidence.
     """
     proba_cols = [c for c in frame.columns if c.startswith("proba_")]
     if not proba_cols:
@@ -97,7 +102,19 @@ def predicted_confidence(frame: pd.DataFrame, prediction_col: str) -> pd.Series:
 def error_summary(
     joined: pd.DataFrame, target: str, prediction_col: str, task: str
 ) -> dict:
-    """Headline error shape: counts, or residual moments."""
+    """Summarise the error shape: counts, or residual moments.
+
+    Args:
+        joined: Predictions joined to ground truth.
+        target: Ground-truth column.
+        prediction_col: Prediction column.
+        task: ``"classification"`` or ``"regression"``.
+
+    Returns:
+        Row count plus correct/wrong counts for classification, or
+        residual mean, standard deviation and maximum absolute error for
+        regression.
+    """
     if task == "regression":
         residual = joined[target] - joined[prediction_col]
         return {
@@ -115,7 +132,16 @@ def error_summary(
 
 
 def to_markdown(frame: pd.DataFrame, empty_note: str = "_none_") -> str:
-    """Render a frame as a markdown table, without requiring tabulate."""
+    """Render a frame as a markdown table, without requiring tabulate.
+
+    Args:
+        frame: Frame to render.
+        empty_note: Text returned in place of a table when the frame is
+            empty.
+
+    Returns:
+        The markdown table, or ``empty_note``.
+    """
     if frame.empty:
         return empty_note
     header = "| " + " | ".join(str(c) for c in frame.columns) + " |"
@@ -128,6 +154,7 @@ def to_markdown(frame: pd.DataFrame, empty_note: str = "_none_") -> str:
 
 
 def _cell(value) -> str:
+    """Format one table cell, fixing floats to four decimals."""
     if isinstance(value, float):
         return f"{value:.4f}"
     return str(value)

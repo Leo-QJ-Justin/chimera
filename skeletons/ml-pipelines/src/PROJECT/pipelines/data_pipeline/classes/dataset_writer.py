@@ -2,22 +2,16 @@
 
 Stateful, which is why it is a class and not a function: it accumulates
 per-reason row counts across stages, then writes them into the manifest
-that the training run embeds as ``upstream_config``. The counters are the
-point - "3000 rows in, 2400 out" is useless without the four reasons that
-account for the 600.
+that the training run embeds as ``upstream_config``. Per-reason counters
+are what make a row-count drop interpretable rather than only visible, and
+``load_manifest`` is how the training pipeline reads them back.
 
-**Stage checkpoints.** The data pipeline runs load -> clean -> engineer
-features, and at each stage boundary it can pipe the frame out to disk.
-Config names the stages worth keeping (``checkpoints: [cleaned,
-features]``) and each lands at ``<checkpoint_dir>/<stage>.parquet``. They
-are debugging aids, not inputs: nothing downstream reads them, so adding
-or dropping one changes no contract. The **final** stage output is the
-model-input table at ``processed_path``, and that is the only file the
-training pipeline consumes.
-
-The manifest attaches to that final output, and is also the read side of
-the D5 boundary: ``load_manifest`` is how the training pipeline learns
-what produced its input.
+Stage checkpoints: at each boundary of load -> clean -> engineer features,
+the frame can be piped out to ``<checkpoint_dir>/<stage>.parquet``, for
+the stages ``checkpoints`` names. They are debugging aids, not inputs -
+nothing downstream reads them. The final stage output is the model-input
+table at ``processed_path``, the only file the training pipeline consumes,
+and the manifest attaches to it.
 """
 
 import json
@@ -74,10 +68,13 @@ class DatasetWriter:
     def check_contract(self, df: pd.DataFrame) -> None:
         """Fail here, not three stages downstream, if keys went missing.
 
+        Args:
+            df: The frame about to be written as the model-input table.
+
         Raises:
             KeyError: A key column or the target did not survive.
             ValueError: Two rows share a key, which would make split
-                membership by key ambiguous (D8).
+                membership by key ambiguous.
         """
         required = [*self.config.key_cols, self.config.target]
         missing = [c for c in required if c not in df.columns]
@@ -95,6 +92,9 @@ class DatasetWriter:
 
     def write(self, df: pd.DataFrame) -> tuple[Path, Path]:
         """Write the model-input table and its manifest sidecar.
+
+        Args:
+            df: The final stage output.
 
         Returns:
             ``(processed_path, manifest_path)``.
@@ -114,10 +114,13 @@ class DatasetWriter:
         return processed_path, written_manifest
 
     def _write_manifest(self, processed_path: Path, df: pd.DataFrame) -> Path:
-        """Sidecar the training run embeds as ``upstream_config`` (D10).
+        """Write the sidecar the training run embeds as ``upstream_config``.
 
-        Metadata-first reload means inference replays *this* config, not
-        whatever the YAML says months later.
+        Metadata-first reload means inference replays this config, not
+        whatever the YAML files say months later.
+
+        Returns:
+            The written manifest path.
         """
         manifest = {
             "processed_path": str(processed_path),

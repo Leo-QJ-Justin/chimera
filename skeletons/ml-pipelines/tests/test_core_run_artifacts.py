@@ -1,3 +1,5 @@
+"""Run directories, the latest/best pointers, and the metadata envelope."""
+
 import json
 
 import numpy as np

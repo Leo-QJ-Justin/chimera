@@ -1,40 +1,17 @@
-"""``BaseTrainer``: the one contract every model family is reached through.
+"""The ``BaseTrainer`` contract every model family is reached through.
 
 The training pipeline builds a trainer from the ``trainer/`` config group
-and then only ever calls the methods below. That is what keeps the
-orchestrator free of ``if trainer.kind == ...`` branches, and what lets the
+and then calls only the methods declared below, which keeps the
+orchestrator free of ``if trainer.kind == ...`` branches and lets the
 inference pipeline reload a torch run and a LightGBM run with identical
 code.
 
-The base is deliberately thin. It fixes the *contract* - which methods
-exist and what they promise - plus the few services that must be identical
-across families for their numbers to be comparable: ``cross_validate``
-(the whole procedure goes inside the fold, R1.11), the stopping-subset
-carve, the spec round-trip, and the shared tuning tables below. Everything
-a family does to a model it writes in its own class body, ``evaluate`` and
+The base fixes the contract plus the few services that must be identical
+across families for their numbers to be comparable: cross-validation, the
+stopping-subset carve, the spec round-trip, and the tuning tables below.
+Everything else a family writes in its own class body, ``evaluate`` and
 ``hyperparameter_tune`` included, so each trainer file reads top to bottom
-without hopping up a hierarchy. Sibling duplication is the accepted price;
-a family that cannot be read on its own is what it buys off.
-
-Four decisions the rest of the file assumes:
-
-- **Validation data is in ``train``'s signature**, not out-of-band state,
-  because three shipped trainers need it during the fit (LightGBM and
-  XGBoost early stopping, torch's per-epoch monitor). A trainer with no
-  use for it ignores it - and says so through ``uses_val_in_fit``, the
-  declaration the family's own ``fit_frames`` / ``evaluate_run`` /
-  ``selection_key`` then act on (R1.10, R1.13) and which decides, inside
-  ``cross_validate``, whether each fold carves its own stopping subset
-  (R1.11).
-- **``predict_proba`` may return None.** The inference pipeline degrades to
-  hard predictions rather than making every family fake probabilities.
-- **One artifact, named in metadata.** ``save`` returns the
-  ``{kind: filename}`` map that goes verbatim into ``metadata.json``, so
-  nothing downstream globs a directory. ``load`` is metadata-first and
-  never consults config files, which may have moved on since the run.
-- **``get_params`` and ``spec`` stay separate.** The tracker wants
-  ``model_lr=0.001``; the reload path wants a nested structure it can hand
-  back to ``__init__``.
+without hopping up a hierarchy.
 """
 
 import logging
@@ -69,8 +46,8 @@ TUNE_DEFAULT = {
 # decides the winner, so it has to be big enough to mean something.
 TUNE_HOLDOUT_FRACTION = 0.2
 # Share of each CV fold's training rows carved out as the early-stopping
-# referee, for families whose fit needs one (R1.11). Matches the standing
-# val split's share of the run, so a fold's fit is shaped like the real one.
+# referee, for families whose fit needs one. Matches the standing val
+# split's share of the run, so a fold's fit is shaped like the real one.
 CV_STOP_FRACTION = 0.15
 
 
@@ -98,9 +75,9 @@ def resolve_tune_metric(
 ) -> tuple[str, str]:
     """``(metric, direction)`` for a search: what was asked, else the tables.
 
-    Every family opens its ``hyperparameter_tune`` with this line, which is
-    why it is a function rather than five copies of a lookup: it is data
-    resolution, not part of any family's ML story.
+    Every family opens its ``hyperparameter_tune`` with this call: resolving
+    a metric name against the defaults is configuration handling, not part
+    of a family's training procedure.
 
     Args:
         task: ``"classification"`` or ``"regression"``.
@@ -108,11 +85,14 @@ def resolve_tune_metric(
         direction: ``"maximize"``/``"minimize"``, or None to infer it from
             the metric.
 
+    Returns:
+        The resolved ``(metric, direction)`` pair.
+
     Raises:
         ValueError: If a direction has to be inferred for a metric that has
             none recorded. A custom metric may be optimised, but only with
-            its direction said out loud - a search run the wrong way round
-            still finishes and still writes a run.
+            its direction stated: a search run in the wrong direction still
+            completes and still writes a run.
     """
     default_metric, default_direction = TUNE_DEFAULT[task]
     if metric is None:
@@ -150,19 +130,20 @@ class BaseTrainer(ABC):
         categorical_features: Categorical feature columns, in contract
             order. Concatenated after the numerics to form
             ``feature_columns``, which metadata pins for inference.
-        cv_mode: The run's ``split.mode``; picks the CV splitter (D9).
+        cv_mode: The run's ``split.mode``, which picks the CV splitter.
 
     Attributes:
         kind: Registry key, config ``trainer.kind``, and ``model_type`` in
             metadata - one name for one family.
         scale_numeric: Whether this family's preprocessing standardises
             numerics. Trees set it False; splits are scale-invariant.
-        uses_val_in_fit: Whether ``train`` consumes the validation split.
-            The family's own protocol methods act on it (R1.10): True keeps
-            val a standing referee outside the fit, False pools train+val
-            and selects on a k-fold CV estimate. The orchestrator never
-            reads it (R1.13); ``cross_validate`` does, to decide whether a
-            fold carves its own stopping subset.
+        uses_val_in_fit: Whether ``train`` consumes the validation split. A
+            fit with no in-fit stopping criterion never reads a validation
+            split, so train and val are pooled into the fit and the run
+            selects on a k-fold CV estimate over the pool; families that
+            early-stop keep val as a standing referee outside the fit. The
+            family's own protocol methods act on this flag, and so does
+            :meth:`cross_validate`; the orchestrator never reads it.
         TUNABLE: This family's search space - parameter name -> default
             range - declared in its own class body and overridable per run
             through ``trainer.tune.space``.
@@ -201,9 +182,9 @@ class BaseTrainer(ABC):
         self.cv_mode = cv_mode
         self.best_params: dict | None = None
         self.fitted = False
-        # The fitted artifact. Deliberately NOT built in __init__: a torch
-        # module needs the design-matrix width, which only exists once data
-        # has been transformed.
+        # The fitted artifact. Not built in __init__: a torch module needs
+        # the design-matrix width, which only exists once data has been
+        # transformed.
         self.model: Any = None
         # The orchestrator replays these into the tracker after training,
         # which is why train() needs no tracker argument and the trainers
@@ -214,11 +195,10 @@ class BaseTrainer(ABC):
 
     @abstractmethod
     def _build_model(self) -> Any:
-        """A **fresh**, unfitted, seeded estimator from ``params``.
+        """A fresh, unfitted, seeded estimator from ``params``.
 
         Called once per ``train``, once per CV fold and once per tuning
-        trial. It must never return a shared object: that is what keeps
-        cross-validation honest.
+        trial, and must never return a shared object.
         """
 
     @abstractmethod
@@ -232,20 +212,19 @@ class BaseTrainer(ABC):
                 ``tune.space: {<name>: false}`` takes a knob out of a search.
 
         Returns:
-            The **resolved** parameters, derived values included (a solver's
+            The resolved parameters, derived values included (a solver's
             penalty, a width and a depth turned into a layer list). Optuna
-            records only what it suggested, so this dict is what each
-            family's tuner stores on the trial and reads back off the winner.
+            records only what it suggested, so each family's tuner stores
+            this dict on the trial and reads it back off the winner.
         """
 
     @abstractmethod
     def fit_frames(self, X: dict, y: dict) -> FitFrames:
-        """The frames this family's search and final fit see (R1.13).
+        """The frames this family's search and final fit see.
 
-        How a run's data is shaped for the fit is family knowledge, so the
-        orchestrator asks rather than branching on a flag: it makes one
-        unconditional ``train(X_fit, y_fit, X_ref, y_ref)`` call and one
-        tune call over the same fit frames, whichever family it was handed.
+        How a run's data is shaped for the fit is family knowledge. The
+        protocol is expressed by the trainer's own methods; the orchestrator
+        sequences them and never branches on the family.
 
         Args:
             X: ``{"train"/"val"/"test": features}``, the realized split.
@@ -253,7 +232,7 @@ class BaseTrainer(ABC):
 
         Returns:
             A :class:`FitFrames`. ``X_fit`` holds exactly the rows of
-            ``fit_splits``, **in split order** - the order is what lets a
+            ``fit_splits``, in split order - the order is what lets a
             temporal run's CV fold carve its stopping subset off the end of
             its own training window. ``X_ref`` is None if and only if this
             family's fit consumes no standing referee, which must agree with
@@ -270,11 +249,36 @@ class BaseTrainer(ABC):
         y_val=None,
         **kwargs,
     ) -> "BaseTrainer":
-        """Fit preprocessing and model. Returns ``self`` for chaining."""
+        """Fit this family's preprocessing and model.
+
+        Args:
+            X: Training features, in any column order (realigned
+                internally).
+            y: Training targets.
+            X_val: The standing referee an in-fit stopping criterion reads,
+                or None. It is a parameter rather than out-of-band state
+                because three shipped families need it during the fit
+                (LightGBM and XGBoost early stopping, torch's per-epoch
+                monitor); a family with no use for it ignores it.
+            y_val: The matching referee targets.
+            **kwargs: Passed through to the underlying estimator's fit.
+
+        Returns:
+            ``self``, fitted: ``model`` holds the artifact and ``history``
+            carries per-iteration records for families that have them.
+        """
 
     @abstractmethod
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        """Hard predictions: class labels, or values for regression."""
+        """Predict hard outputs for a frame.
+
+        Args:
+            X: Features, in any column order (realigned internally).
+
+        Returns:
+            One class label per row, in the labels the model was trained
+            on, or one value per row for regression.
+        """
 
     @abstractmethod
     def evaluate(
@@ -282,15 +286,17 @@ class BaseTrainer(ABC):
     ) -> dict[str, float]:
         """Score a frame with the project's metric definitions.
 
-        Three lines every family writes identically (``check_fitted``, then
-        ``compute_metrics`` over its own predictions) and none inherits: it
-        is the measurement behind every number a run publishes, and it
-        belongs in the file whose predictions it measures.
+        Abstract rather than inherited: this is the measurement behind every
+        number a run publishes, so it belongs in the file whose predictions
+        it measures.
 
         Args:
             X: Features, in any column order (realigned internally).
             y: Ground truth.
             metrics: Metric names or callables; None -> the task defaults.
+
+        Returns:
+            ``{metric name: value}``, unprefixed.
         """
 
     @abstractmethod
@@ -306,13 +312,13 @@ class BaseTrainer(ABC):
         basis: str,
         split: str,
     ) -> dict[str, float]:
-        """Every number this run publishes, in terms its protocol defends.
+        """Every number this run publishes, in the terms its protocol allows.
 
         What a run may claim follows from how it was fitted, so the family
         scores itself and the orchestrator only times the call and logs the
-        result. It is handed the split frames, the frames the fit consumed,
-        and the run's ``selection`` values as plain arguments - no config
-        object and no tracker reach a trainer.
+        result. The split frames, the frames the fit consumed and the run's
+        ``selection`` values arrive as plain arguments: no config object and
+        no tracker reaches a trainer.
 
         Args:
             X: ``{"train"/"val"/"test": features}``, the realized split.
@@ -330,8 +336,8 @@ class BaseTrainer(ABC):
             ``{metric key: value}``, containing the key
             :meth:`selection_key` names for the same arguments. ``test_*``
             is scored exactly once, and a family whose fit consumed val
-            publishes no ``val_*``: a metric labelled "val" is read as
-            held-out, and the label is why anyone trusts the number.
+            publishes no ``val_*``, because a metric labelled "val" is read
+            as held-out.
         """
 
     @abstractmethod
@@ -340,7 +346,12 @@ class BaseTrainer(ABC):
 
         Pure, and callable on an unfitted trainer: the tracker params, the
         metadata envelope and the pointer all name the basis, and none of
-        them should have to wait for a model to exist to find out what it is.
+        them should have to wait for a model to exist to find it out.
+
+        Args:
+            metric: ``selection.metric``, a project metric alias.
+            basis: ``selection.basis`` (``auto`` | ``cv``).
+            split: ``selection.split``.
 
         Returns:
             The recorded ``selection_basis`` and the key of the number the
@@ -363,21 +374,20 @@ class BaseTrainer(ABC):
     ) -> dict:
         """Search this family's own space; the family owns the whole search.
 
-        Abstract, and abstract *only*: there is no shared sweeper to inherit
-        and no hook to fill in. A family scores its trials by the procedure
-        it actually ships - a pooled family through :meth:`cross_validate`,
-        a standing-val family on a carved holdout its trials early-stop
-        against - and nothing obliges the next family to use Optuna at all.
-        What the base fixes is this signature and the postconditions below,
-        which is all the training pipeline calls.
+        There is no shared sweeper to inherit and no hook to fill in. A
+        family scores its trials by the procedure it actually ships - a
+        pooled family through :meth:`cross_validate`, a standing-val family
+        on a carved holdout its trials early-stop against - and need not use
+        Optuna at all. The base fixes only this signature and the
+        postconditions below, which is all the training pipeline calls.
 
         Args:
             n_trials: Search budget, in trials.
-            cv: Fold count (the splitter follows ``cv_mode``, per D9) or an
-                explicit splitter, for a family that scores a trial by
+            cv: Fold count (the splitter follows ``cv_mode``) or an explicit
+                splitter, for a family that scores a trial by
                 cross-validation. A family that scores a trial on a holdout
                 ignores it, and says so.
-            metric: A *project metric alias* - the vocabulary
+            metric: A project metric alias - the vocabulary
                 :meth:`evaluate` speaks, never a sklearn scoring string.
                 None -> ``TUNE_DEFAULT[task]``.
             direction: ``"maximize"``/``"minimize"``; None -> inferred from
@@ -388,29 +398,52 @@ class BaseTrainer(ABC):
         Returns:
             The best parameters found. The same dict must be left on
             ``self.best_params`` and folded into this trainer's own config,
-            so the next :meth:`train` builds with them - a search result is
-            not something the caller can be trusted to remember to apply.
+            so the next :meth:`train` builds with them rather than the
+            caller having to apply them.
         """
 
     @abstractmethod
     def save(self, run_dir: str | Path) -> dict[str, str]:
         """Write this trainer's artifacts into ``run_dir``.
 
+        Args:
+            run_dir: The run directory, which already exists.
+
         Returns:
-            ``{kind: filename}`` for ``metadata.json``'s ``files`` map.
-            Filenames only, never paths - the run dir resolves them, and it
-            moves.
+            ``{kind: filename}`` for ``metadata.json``'s ``files`` map,
+            recorded verbatim so nothing downstream globs a directory.
+            Filenames only, never paths: the run directory resolves them,
+            and it can be moved.
         """
 
     @classmethod
     @abstractmethod
     def load(cls, run_dir: str | Path) -> "BaseTrainer":
-        """Rebuild a fitted trainer from a run directory (metadata-first)."""
+        """Rebuild a fitted trainer from a run directory.
+
+        Metadata-first: both the spec and the filenames come from
+        ``metadata.json`` rather than from config files, which may have
+        moved on since the run.
+
+        Args:
+            run_dir: A run directory written by :meth:`save`.
+
+        Returns:
+            A fitted trainer of this class, ready to predict.
+
+        Raises:
+            ValueError: If the recorded spec was written by a different
+                trainer class.
+        """
 
     # ------------------------------------------------------------ optional
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray | None:
-        """Class probabilities, or None when the family has none."""
+        """Class probabilities, or None when the family has none.
+
+        None is a supported answer: the inference pipeline degrades to hard
+        predictions rather than every family manufacturing probabilities.
+        """
         return None
 
     @property
@@ -425,10 +458,10 @@ class BaseTrainer(ABC):
     def log_model(self, tracker, input_example=None) -> None:
         """Log the fitted model to ``tracker`` in this family's MLflow flavor.
 
-        Called by the training pipeline after ``train``, when tracking is
+        Called by the training pipeline after ``train`` when tracking is
         live. Implementations delegate to
-        ``..modules.model_logging.log_flavor_model``; the default is a
-        no-op, so a family without a flavor is not a failure.
+        ``..modules.model_logging.log_flavor_model``; the default no-op
+        means a family without a flavor is not a failure.
         """
         logger.debug("%s logs no MLflow model", type(self).__name__)
 
@@ -442,24 +475,21 @@ class BaseTrainer(ABC):
         metrics: list[str | Callable] | None = None,
         stop_fraction: float = CV_STOP_FRACTION,
     ) -> dict[str, dict[str, float | list[float]]]:
-        """Cross-validate the **whole training procedure**, fold by fold.
+        """Cross-validate the whole training procedure, fold by fold.
 
-        Every fold builds a fresh trainer of this spec and runs the
-        family's real :meth:`train` on the fold's training rows - including,
-        for a family whose fit needs a stopping referee, a carve-out taken
-        from *inside* those rows (R1.11). The run's standing validation
-        split plays no part here, which is what makes the estimate
-        comparable across families: every candidate is measured by the same
-        procedure on the same folds, and none of them has seen test.
-
-        The cost is honest and unhidden: ``cv`` full fits of this family,
-        early stopping and all.
+        Cross-validation reruns the family's whole training procedure per
+        fold - a fresh trainer, its own preprocessing, its own stopping
+        carve - so the estimate describes the procedure the run actually
+        ships. The run's standing validation split plays no part, which is
+        what makes the estimate comparable across families: every candidate
+        is measured by the same procedure on the same folds and none has
+        seen test. The cost is ``cv`` full fits, early stopping and all.
 
         Args:
             X: Features.
             y: Target.
-            cv: Fold count (the splitter then follows ``cv_mode``, per D9)
-                or an explicit sklearn splitter.
+            cv: Fold count (the splitter then follows ``cv_mode``) or an
+                explicit sklearn splitter.
             metrics: Project metric names or callables, exactly as
                 :meth:`evaluate` takes them - so a fold score is the same
                 measurement the report and ``best.json`` print. None -> the
@@ -513,23 +543,19 @@ class BaseTrainer(ABC):
     def _carve_stopping_subset(self, X_fold, y_fold, fraction: float) -> tuple:
         """A fold's rows split into ``(X_fit, y_fit, X_stop, y_stop)``.
 
-        The referee a standing-val family's fit needs, taken from inside
-        the fold. Reusing the run's standing val split instead would let
-        every fold stop against the same rows, and a fold score is only an
-        out-of-sample number if nothing about the fit saw those rows. The
-        same carve is what gives such a family's *search* the per-trial
-        referee its trials early-stop against and are then scored on.
+        The referee a standing-val family's fit needs, taken from inside the
+        fold: a fold score is out-of-sample only if nothing about the fit
+        saw the held rows, so the run's standing val split cannot serve. The
+        same carve gives such a family's search its per-trial referee.
 
-        Temporal mode carves the chronological **tail** of the fold: a
-        stopping criterion that has seen the future is the leak D9 exists
-        to prevent, and the rows arrive in split order. Stratified mode
-        carves a stratified random subset, anything else a plain random
-        one - both on the trainer's seed, so folds reproduce.
+        Temporal mode carves the chronological tail, so nothing about a fit
+        - including its early-stopping monitor - sees rows later than the
+        point it is evaluated at. Stratified mode carves a stratified random
+        subset, anything else a plain random one, both on the trainer's seed.
 
-        Known limitation: the carve is not group-aware, so under
-        ``cv_mode="group"`` one group's rows can land on both sides of a
-        fold's fit/stop boundary. Pass an explicit splitter and pre-grouped
-        frames if that matters for the problem.
+        The carve is not group-aware: under ``cv_mode="group"`` one group's
+        rows can land on both sides of a fold's fit/stop boundary. Pass an
+        explicit splitter and pre-grouped frames if that matters.
         """
         n_stop = min(max(1, round(len(X_fold) * fraction)), len(X_fold) - 1)
         if self.cv_mode == "temporal":
@@ -553,30 +579,30 @@ class BaseTrainer(ABC):
     def fresh(self) -> "BaseTrainer":
         """An unfitted twin: same family, params, task, seed, features.
 
-        The round trip through :meth:`spec` is the point - it is the same
-        description :meth:`load` rebuilds a saved run from, so a fold's
-        trainer cannot quietly differ from the one the run ships.
+        Built through the :meth:`spec` round trip - the same description
+        :meth:`load` rebuilds a saved run from - so a fold's trainer cannot
+        quietly differ from the one the run ships.
+
+        Returns:
+            A new, unfitted trainer of this class.
         """
         return type(self).from_spec(self.spec())
 
     def _merged_space(self, overrides: dict | None = None) -> dict[str, ParamSpace]:
         """This family's ``TUNABLE`` table with a config's overrides applied.
 
-        The one piece of tuning machinery that is shared, because it is the
-        *config contract* rather than anyone's search: a range typed into
-        ``trainer.tune.space`` has to mean the same thing whichever family
-        reads it.
+        The one shared piece of tuning machinery, because it is the config
+        contract rather than anyone's search: a range typed into
+        ``trainer.tune.space`` means the same thing whichever family reads
+        it. Three behaviours, in the order a config meets them:
 
-        Three behaviours, in the order a config meets them:
-
-        - ``false`` drops the name from the search entirely. Nothing
-          special-cases it afterwards - the parameter simply keeps whatever
-          ``params`` says, exactly as on an untuned run.
-        - A range is merged **field-wise onto the declared one and
-          re-validated as the declared kind**, so overriding ``low``/``high``
-          keeps a declared ``log: true`` instead of silently resetting it,
-          and a list of choices written over a numeric range fails loudly
-          rather than half-applying.
+        - ``false`` drops the name from the search entirely. The parameter
+          then keeps whatever ``params`` says, as on an untuned run.
+        - A range is merged field-wise onto the declared one and
+          re-validated as the declared kind, so overriding ``low``/``high``
+          keeps a declared ``log: true`` instead of resetting it, and a list
+          of choices written over a numeric range fails rather than
+          half-applying.
         - An unrecognised name raises, listing what this family does tune. A
           typo there would otherwise read as configured and search as if it
           were not.
@@ -611,7 +637,7 @@ class BaseTrainer(ABC):
         return merged
 
     def _splitter(self, cv: int | Any):
-        """A fold count follows ``cv_mode`` (D9); a splitter passes through."""
+        """A fold count follows ``cv_mode``; a splitter passes through."""
         return (
             make_cv_splitter(self.cv_mode, cv, self.seed) if isinstance(cv, int) else cv
         )
@@ -637,7 +663,15 @@ class BaseTrainer(ABC):
         return self.kind
 
     def get_params(self) -> dict:
-        """Flat, loggable view of what this trainer is - tracker params."""
+        """Flat, loggable view of what this trainer is - tracker params.
+
+        Kept separate from :meth:`spec` because the two have different
+        readers: the tracker wants ``model_lr=0.001``, the reload path
+        wants a nested structure it can hand back to ``__init__``.
+
+        Returns:
+            A flat ``{name: scalar}`` mapping.
+        """
         params = {
             "trainer": self.kind,
             "task": self.task,
@@ -654,10 +688,13 @@ class BaseTrainer(ABC):
         """The config round-trip: enough to rebuild an unfitted twin.
 
         Stored as ``metadata.json``'s ``hyperparameters``, which is what
-        :meth:`load` reads back. ``model_class`` is the reload guard - a
-        spec written by one trainer class must never be handed to another.
-        Subclasses contribute their harness knobs through
-        :meth:`extra_spec`.
+        :meth:`load` reads back. Subclasses contribute their harness knobs
+        through :meth:`extra_spec`.
+
+        Returns:
+            The nested description :meth:`from_spec` accepts.
+            ``model_class`` is the reload guard: a spec written by one
+            trainer class must never be handed to another.
         """
         return {
             "model_class": type(self).__name__,
@@ -704,7 +741,12 @@ class BaseTrainer(ABC):
         return trainer
 
     def check_fitted(self) -> None:
-        """Raise before an unfitted trainer produces plausible nonsense."""
+        """Guard every path that reads the fitted artifact.
+
+        Raises:
+            RuntimeError: If neither ``train`` nor ``load`` has run, before
+                an unfitted trainer can return plausible-looking values.
+        """
         if not self.fitted:
             raise RuntimeError(
                 f"{type(self).__name__} is not fitted; call train() (or load()) first"
@@ -716,7 +758,14 @@ class BaseTrainer(ABC):
         Every predict path goes through this rather than trusting the
         caller's column order: the preprocessor selects by name, but a
         positional array downstream (a tensor, a raw booster matrix) does
-        not, and a silently reordered frame is a plausible wrong answer.
+        not, and a reordered frame is a plausible wrong answer.
+
+        Returns:
+            ``X`` restricted to ``feature_columns``, in that order.
+
+        Raises:
+            ValueError: If any recorded feature column is absent, naming
+                the missing ones.
         """
         missing = [c for c in self.feature_columns if c not in X.columns]
         if missing:

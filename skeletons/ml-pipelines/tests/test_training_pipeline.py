@@ -249,12 +249,11 @@ class TestTrainerSwap:
 
 
 class TestProtocols:
-    """Per-family tuning/selection protocol (R1.10), asserted on both sides.
+    """Per-family tuning and selection protocol, asserted on both sides.
 
-    The pooled protocol is not "the sklearn families do something else": it
-    is what a family that never reads val during the fit is entitled to
-    claim. So the assertions are about the numbers a run publishes, not
-    about which class produced them.
+    The pooled protocol is what a family whose fit never reads val is
+    entitled to claim, so the assertions are about the numbers a run
+    publishes, not about which class produced them.
     """
 
     def _run(self, tmp_path, processed_file, trainer, **overrides):
@@ -320,7 +319,7 @@ class TestProtocols:
     def test_a_pooled_search_folds_over_the_pool(
         self, tmp_path, processed_file, monkeypatch
     ):
-        """The tuner is handed the pool, which is the whole point of R1.10."""
+        """A pooled family's search folds over train+val, not train alone."""
         pytest.importorskip("optuna", reason="needs the 'tune' extra")
         searched = _spy_on_tuning(monkeypatch, "random_forest")
         trainer = {
@@ -359,9 +358,9 @@ class TestProtocols:
 
 
 class TestCrossComparableSelection:
-    """``selection.basis: cv`` (R1.11): one yardstick for every family.
+    """``selection.basis: cv``: one yardstick for every family.
 
-    The default (``auto``) is R1.10's per-family behaviour, asserted above.
+    The default (``auto``) is the per-family behaviour asserted above.
     What this class asserts is the opt-in: a standing-val family keeps the
     fit its early stopping needs *and* publishes the same CV number a pooled
     family does, so the two rank in one output dir without touching test.
@@ -395,7 +394,7 @@ class TestCrossComparableSelection:
     def test_two_families_rank_against_each_other_in_one_output_dir(
         self, tmp_path, processed_file, caplog
     ):
-        """The whole point: a pooled family and a standing-val one, one best."""
+        """A pooled family and a standing-val one rank on one best.json."""
         import logging
         import time
 
@@ -615,7 +614,7 @@ class TestTuning:
             assert spec["params"][key] == value
 
     def test_a_seeded_search_replays(self, tmp_path, processed_file):
-        """Same seed, same spec, same winners - or a tuned run is anecdote.
+        """Same seed and same spec produce the same winners.
 
         Separate output dirs because the run timestamp is second-granular
         and ``make_run_dir`` refuses a collision.

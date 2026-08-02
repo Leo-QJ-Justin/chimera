@@ -1,12 +1,12 @@
 """The shared plotting helpers: every one writes a real, decodable PNG.
 
-"A file exists" is not the assertion that matters - a truncated or empty
-file exists too. Each test decodes what was written, so a helper that
-silently produced a broken image fails here rather than in someone's PR.
+Assert decodable image content, not file existence: a truncated or empty
+file exists too. Each test reads back what was written, so a helper that
+produced a broken image fails here.
 
-The figures themselves are not compared pixel-wise: that is a test of
-matplotlib's rendering, it breaks on every version bump, and it says
-nothing about whether the right data was plotted.
+The figures themselves are not compared pixel-wise: that tests matplotlib's
+rendering, it breaks on every version bump, and it says nothing about
+whether the right data was plotted.
 """
 
 import numpy as np

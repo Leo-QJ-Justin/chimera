@@ -1,11 +1,10 @@
 """The fitted-preprocessing factory every trainer shares.
 
-One ``ColumnTransformer`` builder, used by all three trainers, is what
-makes the ``BaseTrainer`` contract meaningful: every trainer accepts the
-same raw feature frame, so swapping ``model=`` never changes what the
-caller must hand over. It is also the D6 rule in code - fitted
-preprocessing belongs to the training pipeline, and it serializes
-together with the estimator so the two halves cannot drift apart at
+One ``ColumnTransformer`` builder, shared by every trainer, is what makes
+the ``BaseTrainer`` contract meaningful: every trainer accepts the same raw
+feature frame, so swapping ``trainer=`` never changes what the caller must
+hand over. Fitted preprocessing belongs to the training pipeline, and
+preprocessing and model serialize together, so they cannot drift apart at
 serving time.
 
 Stateless *factory*, stateful *product*: this module builds an unfitted
@@ -77,16 +76,16 @@ def transformed_feature_names(
     width, so labelling it with the raw feature list silently mislabels
     every bar after the first categorical.
 
-    Degrades rather than raises, in both directions - a diagnostic must not
-    be able to fail a run:
+    Degrades rather than raises in both directions, because a diagnostic
+    must not be able to fail a run.
 
     Args:
         preprocessor: A **fitted** transformer, ideally one exposing
             ``get_feature_names_out()``.
         input_cols: Fallback names for a transformer that does not.
         n_features: Expected width. When given and the resolved names do
-            not match it, generic ``f0..fN`` names are used instead - an
-            honest "unknown" beats a confidently wrong label.
+            not match it, generic ``f0..fN`` names are used instead, which
+            is less misleading than a confidently wrong label.
 
     Returns:
         One name per design-matrix column.

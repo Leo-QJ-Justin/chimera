@@ -4,12 +4,12 @@ The one place that turns "which run?" into a loaded, ready trainer. It is
 stateful (it holds a resolved run dir, its metadata and the loaded
 trainer), which is why it is a class.
 
-**Trainer-agnostic by construction.** ``metadata.json`` records
+Trainer-agnostic by construction: ``metadata.json`` records
 ``model_type``, which is the trainer family key; the registry maps it to a
 trainer class and that class's own ``load`` does the rest. A LightGBM run
-and a torch run therefore load through identical code here - which is the
-whole point of the ``BaseTrainer`` contract, and the thing that would
-quietly rot if this module ever grew a branch on model family.
+and a torch run load through identical code here. Model-specific behavior
+lives behind the trainer contract, so a branch on model family in this
+module would undo that.
 """
 
 import logging
@@ -66,7 +66,14 @@ class ModelLoader:
         return trainer, self.metadata
 
     def resolve_run_dir(self) -> Path:
-        """Explicit timestamp > best.json > latest.json, and say which."""
+        """Resolve the run directory to serve, logging which rule applied.
+
+        Precedence is explicit timestamp, then ``best.json``, then
+        ``latest.json``.
+
+        Returns:
+            The resolved run directory.
+        """
         selection = self.selection
         base = selection.runs_dir
         if selection.timestamp:
@@ -76,8 +83,9 @@ class ModelLoader:
             try:
                 timestamp = get_best_info(base)["timestamp"]
             except FileNotFoundError:
-                # Falling back is reasonable; doing it silently is not - the
-                # corpus bug was a "best" model that was quietly the latest.
+                # Falling back is reasonable; doing it without a log line
+                # would make a "best" model indistinguishable from a run
+                # that happened to be latest.
                 logger.warning("No best.json under %s; falling back to latest", base)
                 timestamp = get_latest_timestamp(base)
         else:

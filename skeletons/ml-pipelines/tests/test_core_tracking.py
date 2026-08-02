@@ -1,3 +1,5 @@
+"""Tracking: the no-op tracker, the JSONL sidecar, and the live MLflow path."""
+
 import importlib.util
 
 import pytest

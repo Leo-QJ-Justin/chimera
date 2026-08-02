@@ -1,3 +1,5 @@
+"""Config validation, seeding, and the stage timer."""
+
 import logging
 
 import numpy as np

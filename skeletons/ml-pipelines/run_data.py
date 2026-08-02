@@ -31,6 +31,7 @@ CONFIG_PATH = "src/PROJECT/pipelines/data_pipeline/configs"
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="data_pipeline")
 def main(cfg: DictConfig) -> None:
+    """Validate the composed config and run the data pipeline."""
     config, log_path = bootstrap(cfg, DataPipelineConfig)
     DataPipeline(config, log_path=log_path).run()
 

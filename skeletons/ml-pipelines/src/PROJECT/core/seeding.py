@@ -45,9 +45,13 @@ def set_seed(seed: int = 42, deterministic_cudnn: bool = False) -> int:
 
 
 def torch_generator(seed: int):
-    """A seeded ``torch.Generator`` for DataLoader shuffling, plus the
-    matching ``worker_init_fn`` - the two DataLoader randomness sources a
-    bare ``set_seed`` does not cover.
+    """Build the DataLoader randomness sources ``set_seed`` cannot reach.
+
+    A seeded ``torch.Generator`` controls shuffling and the matching
+    ``worker_init_fn`` reseeds each worker process.
+
+    Args:
+        seed: Base seed; worker ``i`` is seeded with ``seed + i``.
 
     Returns:
         ``(generator, worker_init_fn)``. Pass both to ``DataLoader``.

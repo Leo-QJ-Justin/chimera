@@ -4,7 +4,7 @@
     python run_evaluation.py predictions_path=outputs/inference/holdout.parquet
     python run_evaluation.py triage.top_n=50 '+triage.drill_down_columns=[num_a]'
 
-Runs *after* ``run_inference.py``: it joins that pipeline's predictions to
+Runs after ``run_inference.py``: it joins that pipeline's predictions to
 the model-input table's ground truth by key, computes the metric report
 and the error triage table, and writes both to
 ``outputs/evaluation/<timestamp>/``.
@@ -26,6 +26,7 @@ CONFIG_PATH = "src/PROJECT/pipelines/evaluation_pipeline/configs"
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="evaluation")
 def main(cfg: DictConfig) -> None:
+    """Validate the composed config and run the evaluation pipeline."""
     config, log_path = bootstrap(cfg, EvaluationConfig)
     EvaluationPipeline(config, log_path=log_path).run()
 

@@ -1,10 +1,9 @@
 """Prediction-based figures for the evaluation report.
 
-The counterpart to the training pipeline's post-fit diagnostics, split by
-what each side actually needs: those need the model's internals, these need
-only the joined predictions table - which is exactly why they belong here
-and not there. No model is loaded, no feature is rebuilt; that is the one
-data path rule (D4) holding at the plotting layer too.
+The counterpart to the training pipeline's post-fit diagnostics: those
+need the model's internals, these need only the joined predictions table.
+No model is loaded and no feature is rebuilt, so the plotting layer stays
+on the scoring side of the one-data-path boundary.
 
 Confusion matrix and residuals come from the hard predictions alone. ROC,
 precision-recall and calibration need the ``proba_<label>`` columns the
@@ -12,8 +11,7 @@ inference pipeline writes when ``include_probabilities`` is on; when they
 are absent the report says so rather than quietly shipping fewer figures.
 
 Everything lands in ``<run_dir>/plots/``, which the pipeline uploads with
-the rest of the run directory. Every figure is individually guarded: one
-that fails costs the report a warning line, not the report.
+the rest of the run directory. Every figure is individually guarded.
 """
 
 import logging
@@ -87,7 +85,17 @@ def write_evaluation_plots(
 def _probability_plots(
     joined: pd.DataFrame, y_true, plots_dir: Path, metrics: dict
 ) -> list[Path]:
-    """ROC, PR and calibration - the three that need ``proba_*`` columns."""
+    """Draw ROC, PR and calibration, the three needing ``proba_*`` columns.
+
+    Args:
+        joined: Predictions joined to ground truth.
+        y_true: Ground-truth column of ``joined``.
+        plots_dir: Directory the figures are written into.
+        metrics: Collector updated in place with the curves' scalars.
+
+    Returns:
+        Paths of the figures that were written.
+    """
     columns = [c for c in joined.columns if c.startswith(PROBA_PREFIX)]
     if not columns:
         logger.info(
@@ -138,7 +146,7 @@ def _probability_plots(
 
 
 def _attempt(what: str, plot, *args) -> list[Path]:
-    """Draw one figure; a failure is a warning, never a failed report."""
+    """Draw one figure; a failure warns and returns no path."""
     try:
         return [plot(*args)]
     except Exception as e:

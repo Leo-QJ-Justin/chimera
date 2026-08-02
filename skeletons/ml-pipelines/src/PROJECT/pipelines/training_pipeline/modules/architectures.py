@@ -4,8 +4,7 @@ Named ``architectures`` rather than ``models`` because "model" already
 means the Hydra config group; this module holds only the ``nn.Module``
 classes ``TorchTrainer`` can build.
 
-Two prescriptions from the maintainer's notes are encoded here rather
-than left to memory:
+Two rules are encoded here rather than left to convention:
 
 - **Layer order**: ``Linear -> BatchNorm -> ReLU -> Dropout``. BatchNorm
   before the activation normalises the pre-activations (its stated

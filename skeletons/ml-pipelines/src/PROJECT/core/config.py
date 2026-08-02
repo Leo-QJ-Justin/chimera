@@ -1,10 +1,10 @@
 """Config validation layer: pydantic on top of Hydra composition.
 
 Hydra owns file composition, config groups, CLI overrides, and sweeps.
-This module owns what runs *after* composition: shared base models that
+This module owns what runs after composition: shared base models that
 pipeline schemas subclass, cross-field validation, and defaults
-transparency (warn about every value the user did not set - the answer
-to "why did it use 42?").
+transparency - every value the run did not set explicitly is warned
+about, so an unexpected value can be traced back to its default.
 
 Composite schemas use ``extra="ignore"`` because composition injects
 sections a given pipeline does not use; ``warn_extra_sections`` surfaces
@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 class LoggingConfig(BaseModel):
+    """Console and file logging settings for a run."""
+
     model_config = {"extra": "ignore"}
 
     level: str = "INFO"
@@ -34,9 +36,11 @@ class LoggingConfig(BaseModel):
 
 
 class MlflowConfig(BaseModel):
+    """Experiment tracking settings consumed by ``init_tracking``."""
+
     model_config = {"extra": "ignore"}
 
-    # Schema default is OFF so tests and minimal configs are predictable;
+    # Schema default is off so tests and minimal configs are predictable;
     # projects turn it on in their base config.
     enabled: bool = False
     tracking_uri: str = "sqlite:///mlflow.db"
@@ -45,6 +49,8 @@ class MlflowConfig(BaseModel):
 
 
 class SplitConfig(BaseModel):
+    """Split mode, proportions, keys and seed for a run."""
+
     model_config = {"extra": "ignore"}
 
     mode: Literal["shuffle", "stratified", "temporal", "group"] = "stratified"
@@ -58,6 +64,7 @@ class SplitConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_ratios(self):
+        """Require the three split sizes to sum to 1.0."""
         total = self.train_size + self.val_size + self.test_size
         if not math.isclose(total, 1.0, rel_tol=1e-9):
             raise ValueError(f"train/val/test sizes must sum to 1.0, got {total}")

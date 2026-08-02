@@ -1,15 +1,12 @@
 # dictConfig used by core.logging_setup.configure_logging(config_path=...).
 #
-# Console plus level-split rotating file
-# handlers, `delay: true` so no file is created until something is actually
-# logged (matters in read-only containers). Two deliberate changes:
-#   - stdlib Formatter instead of pythonjsonlogger, so there is no extra
-#     dependency; swap the `class:` line back in if you ship to a log
-#     aggregator;
-#   - no `mode: "w"` anywhere - truncating per run defeats rotation.
-#
-# Handler filenames are rebound into `logging.log_dir` at load time, so the
-# bare names here are intentional.
+# Console plus level-split rotating file handlers. `delay: true` keeps a
+# file from being created until something is logged, which matters in
+# read-only containers. The stdlib Formatter avoids a pythonjsonlogger
+# dependency; swap the `class:` line for it when shipping to a log
+# aggregator. No `mode: "w"` anywhere, since truncating per run defeats
+# rotation. Handler filenames are rebound into `logging.log_dir` at load
+# time, so the bare names below are intentional.
 version: 1
 disable_existing_loggers: false
 

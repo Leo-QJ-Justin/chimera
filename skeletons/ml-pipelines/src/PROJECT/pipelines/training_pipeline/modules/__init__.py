@@ -3,7 +3,7 @@
 ``preprocessing`` and ``splitting`` serve every trainer. The remaining
 modules (``loops``, ``callbacks``, ``checkpointing``, ``device``,
 ``sanity``, ``datasets``, ``architectures``) are ``TorchTrainer``'s
-internals and import torch, so they are NOT re-exported here - importing
+internals and import torch, so they are not re-exported here: importing
 this package must not require the torch extra.
 """
 

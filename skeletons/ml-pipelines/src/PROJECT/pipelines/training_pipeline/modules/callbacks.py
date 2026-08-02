@@ -79,14 +79,17 @@ class EarlyStoppingMonitor:
 
     @property
     def early_stop(self) -> bool:
+        """True once patience has been exhausted."""
         return self._stopper.early_stop
 
     @property
     def counter(self) -> int:
+        """Epochs since the last improvement."""
         return self._stopper.counter
 
     @property
     def best_value(self) -> float | None:
+        """Best monitored value seen, in the caller's sign; None before any."""
         best = self._stopper.best_val_loss
         return None if best is None else self._signed(best)
 

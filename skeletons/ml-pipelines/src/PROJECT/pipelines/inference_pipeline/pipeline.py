@@ -2,13 +2,14 @@
 
 Resolve a training run, rebuild whatever trainer produced it, enforce the
 recorded feature contract, predict, write a predictions file keyed for
-downstream joins. That is all it does - **scoring lives in the evaluation
-pipeline**, which consumes this file (D4).
+downstream joins. That is all it does. Predictions are produced exactly
+once, by the inference pipeline; evaluation only joins and scores that
+file.
 
-The reason for the split is structural, not stylistic: predictions must
-be produced exactly once, by the code that serves them. A second
-sample-building path for evaluation drifts from the serving path, and the
-drift shows up as a train/serve skew nobody can localise.
+The reason for the split is structural. A second sample-building path,
+built for evaluation, drifts from the serving path, and the drift shows up
+as a train/serve skew that has no single place to trace it back to once it
+appears.
 """
 
 import logging
@@ -29,6 +30,13 @@ class InferencePipeline:
     """Load a recorded run, reproduce its feature contract, predict."""
 
     def __init__(self, config: InferenceConfig, log_path: str | Path | None = None):
+        """Initialize the pipeline.
+
+        Args:
+            config: Validated inference config.
+            log_path: The entry script's log file, uploaded as the last
+                run artifact so it captures everything before it.
+        """
         self.config = config
         self.log_path = log_path
 
@@ -95,6 +103,7 @@ class InferencePipeline:
         return output
 
     def _write_output(self, output: pd.DataFrame) -> Path:
+        """Write the predictions file; format chosen by the path suffix."""
         path = Path(self.config.output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.suffix == ".parquet":

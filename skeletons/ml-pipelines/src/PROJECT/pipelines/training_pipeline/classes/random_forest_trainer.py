@@ -3,14 +3,12 @@
 The strong tabular baseline that needs no early stopping and no tuning to
 be useful, which is why it is the default trainer in the shipped config.
 
-Self-contained on purpose, down to the parts a sibling file repeats almost
-verbatim (the one-shot fit, the joblib pair, the sklearn flavor): the file
-is meant to answer "what does this family do?" from top to bottom, and
-every hop up an inheritance chain is a place that question stops being
-answerable here.
+Self-contained down to the parts a sibling file repeats almost verbatim
+(the one-shot fit, the joblib pair, the sklearn flavor), so the file
+answers "what does this family do?" from top to bottom.
 
-The artifact is one ``Pipeline(preprocess, model)`` (D6): ``joblib.dump``
-captures preprocessing and model *together*, so they cannot drift apart at
+The artifact is one ``Pipeline(preprocess, model)``: ``joblib.dump``
+captures preprocessing and model together, so they cannot drift apart at
 serving time, and per-fold refitting is automatic rather than remembered.
 """
 
@@ -43,8 +41,8 @@ class RandomForestTrainer(BaseTrainer):
     # the feature values in any importance plot drawn from the artifact.
     scale_numeric = False
     # Bagged trees stop when the forest is grown, not when a validation curve
-    # turns, so the fit never reads val. Its runs pool train+val and select on
-    # a k-fold CV estimate (R1.10).
+    # turns, so this fit has no in-fit stopping criterion: train and val are
+    # pooled into it and the run selects on a k-fold CV estimate over the pool.
     uses_val_in_fit = False
 
     # Defaults for the search; `trainer.tune.space` narrows any of them and
@@ -58,6 +56,8 @@ class RandomForestTrainer(BaseTrainer):
         "max_features": ChoiceSpace(choices=["sqrt", "log2", None]),
     }
 
+    # --------------------------------------------------------- construction
+
     def _build_model(self):
         forest = (
             RandomForestRegressor if self.task == "regression" else RandomForestClassifier
@@ -67,22 +67,22 @@ class RandomForestTrainer(BaseTrainer):
     def _get_param_space(self, trial, space: dict) -> dict:
         return {name: entry.suggest(trial, name) for name, entry in space.items()}
 
+    # ---------------------------------------------------------- fit & train
+
     def fit_frames(self, X: dict, y: dict) -> FitFrames:
         """The pooled protocol: train+val is the fit, and there is no referee.
 
         A forest stops when it is grown, not when a validation curve turns,
-        so it has no reason to keep 15% of the development data out of
-        itself: the two splits are pooled and the selection number becomes a
-        CV estimate over the pool (R1.10).
+        so its fit reads no validation split: train and val are pooled into
+        the fit and the run selects on a k-fold CV estimate over the pool.
 
-        Order matters: the pool is concatenated in split order, so a
-        temporal run's pool stays chronological, which is what lets a CV
-        fold carve its stopping subset off the end of its own training
-        window rather than out of the middle of it.
+        The pool is concatenated in split order, so a temporal run's pool
+        stays chronological and a CV fold can carve its stopping subset off
+        the end of its own training window rather than out of the middle.
 
-        No referee frames come back at all. Those rows are inside ``X_fit``
-        now, and handing them over a second time as a "validation split" is
-        how an in-sample number ends up being read as a held-out one.
+        No referee frames come back: those rows are inside ``X_fit`` now,
+        and handing them over again as a "validation split" is how an
+        in-sample number ends up being read as a held-out one.
         """
         return FitFrames(
             pd.concat([X["train"], X["val"]]),
@@ -100,11 +100,11 @@ class RandomForestTrainer(BaseTrainer):
         y_val=None,
         **kwargs,
     ) -> "RandomForestTrainer":
-        """Fit the whole pipeline on train.
+        """Fit the whole pipeline on ``X``.
 
-        The validation split is deliberately unused: a forest has no in-fit
-        stopping criterion, so feeding it val data would only leak it. Under
-        this family's protocol those rows are pooled into ``X`` instead
+        ``X_val``/``y_val`` are unused: a forest has no in-fit stopping
+        criterion, so feeding it val data would only leak it. Under this
+        family's protocol those rows are pooled into ``X`` instead
         (:meth:`fit_frames`).
         """
         model = Pipeline(
@@ -116,11 +116,15 @@ class RandomForestTrainer(BaseTrainer):
         logger.info("Trained %s on %d rows", self.model_type, len(X))
         return self
 
+    # --------------------------------------------------- predict & evaluate
+
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Class labels (or regression values) from the joblib pipeline."""
         self.check_fitted()
         return np.asarray(self.model.predict(self.align(X)))
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray | None:
+        """Class probabilities from the joblib pipeline; None for regression."""
         self.check_fitted()
         if self.task == "regression":
             return None
@@ -128,6 +132,7 @@ class RandomForestTrainer(BaseTrainer):
 
     @property
     def classes_(self) -> np.ndarray | None:
+        """Class labels in the order :meth:`predict_proba` returns them."""
         return None if self.model is None else getattr(self.model, "classes_", None)
 
     def evaluate(
@@ -151,23 +156,34 @@ class RandomForestTrainer(BaseTrainer):
     ) -> dict[str, float]:
         """In-sample ``dev_*``, untouched ``test_*``, and the CV estimate.
 
-        Deliberately no ``val_*`` row: those rows are inside the fit, so a
-        metric labelled "val" would be read as held-out when it is not, and
-        the label is the whole reason anyone trusts the number. ``dev_*`` is
-        the pool's in-sample score - the overfitting reference ``train_*``
-        was - and the out-of-sample number this protocol has is the CV
-        estimate below.
+        No ``val_*`` row: those rows are inside the fit, so a metric
+        labelled "val" would be read as held-out when it is not. ``dev_*``
+        is the pool's in-sample score - the overfitting reference
+        ``train_*`` was - and the out-of-sample number this protocol has is
+        the CV estimate below.
 
-        That estimate is this family's own procedure, k times: a fresh
-        trainer per fold running the real :meth:`train` (R1.11), split by
-        the run's own ``split.mode`` (D9), over the pool - so it describes
-        the procedure the run ships rather than a cheaper stand-in for it.
-        The std travels with the mean because a selection criterion is a
-        random variable: two runs 0.002 apart on a fold spread of 0.05 have
-        not been distinguished (Cawley & Talbot 2010).
+        Cross-validation reruns the family's whole training procedure per
+        fold - a fresh trainer, its own preprocessing, its own stopping
+        carve - so the estimate describes the procedure the run actually
+        ships; the splitter follows the run's configured split mode. The std
+        travels with the mean because a selection criterion is a random
+        variable: two runs 0.002 apart on a fold spread of 0.05 have not
+        been distinguished (Cawley & Talbot 2010).
 
-        ``basis`` is accepted and unread: a pooled run is already on the CV
-        basis, so ``selection.basis: cv`` asks it for nothing new.
+        Args:
+            X: ``{"train"/"val"/"test": features}``, the realized split.
+            y: The matching targets, under the same keys.
+            X_fit: The train+val pool the fit consumed.
+            y_fit: The matching targets.
+            metric: ``selection.metric``, a project metric alias.
+            cv: Fold count for the CV estimate.
+            basis: ``selection.basis``. Accepted and unread: a pooled run is
+                already on the CV basis, so ``cv`` asks it for nothing new.
+            split: ``selection.split``. Ignored, and logged as ignored.
+
+        Returns:
+            The ``dev_*`` and ``test_*`` scores, plus ``cv_<metric>`` and
+            ``cv_<metric>_std``.
         """
         logger.info(
             "%s does not use val during the fit: pooled protocol, so train+val "
@@ -202,13 +218,24 @@ class RandomForestTrainer(BaseTrainer):
         """Always the CV estimate: this protocol has no held-out split left.
 
         ``selection.split`` names rows that are inside the fit, so it is
-        ignored and the CV estimate decides; the ``cv_`` prefix is what
-        keeps the two kinds of number from being silently ranked against
-        each other. ``selection.basis: cv`` puts every family on this basis
-        so that runs of different families do rank against each other
-        (R1.11) - a pooled run was already there.
+        ignored and the CV estimate decides; the ``cv_`` prefix keeps the
+        two kinds of estimate from being ranked against each other.
+        ``selection.basis: cv`` puts every family on this basis so that runs
+        of different families rank against each other, and a pooled run was
+        already there.
+
+        Args:
+            metric: ``selection.metric``, a project metric alias.
+            basis: ``selection.basis``. Unread here.
+            split: ``selection.split``. Unread here.
+
+        Returns:
+            ``("cv", "cv_<metric>")`` - the basis recorded in metadata and
+            the key :meth:`evaluate_run` publishes.
         """
         return "cv", f"cv_{metric}"
+
+    # -------------------------------------------------- hyperparameter_tune
 
     def hyperparameter_tune(
         self,
@@ -224,11 +251,11 @@ class RandomForestTrainer(BaseTrainer):
         """Optuna, scoring every trial by this family's own procedure CV.
 
         A trial is a candidate trainer of this same spec, cross-validated by
-        :meth:`BaseTrainer.cross_validate` - which fits it fold by fold
-        exactly as the run will fit the winner, and scores each fold through
-        :meth:`evaluate`. So the number a trial is ranked on is the number
-        the run publishes, in the same units, and the selection CV that
-        decides ``best.json`` measures the same thing the search did.
+        :meth:`BaseTrainer.cross_validate`, which fits it fold by fold
+        exactly as the run will fit the winner and scores each fold through
+        :meth:`evaluate`. The number a trial is ranked on is therefore the
+        number the run publishes, in the same units, and the selection CV
+        that decides ``best.json`` measures what the search measured.
 
         Args:
             n_trials: Optuna trials; each costs ``cv`` fits.
@@ -268,12 +295,12 @@ class RandomForestTrainer(BaseTrainer):
             scores = candidate.cross_validate(X, y, cv=cv, metrics=[metric])
             return scores[metric]["mean"]
 
-        # An unseeded sampler makes the search trajectory unreplayable even
-        # when the seed, the data and the space are all pinned.
+        # Seed the sampler: without it the search trajectory is unreplayable
+        # even when the seed, the data and the space are all pinned.
         optuna_kwargs.setdefault("sampler", optuna.samplers.TPESampler(seed=self.seed))
         study = optuna.create_study(direction=direction, **optuna_kwargs)
-        # show_progress_bar is off: the bar writes to stderr and interleaves
-        # with the run's log file, which is the thing anyone reads afterwards.
+        # show_progress_bar is off: it writes to stderr and interleaves with
+        # the run's structured log lines.
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
         self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
@@ -288,18 +315,19 @@ class RandomForestTrainer(BaseTrainer):
         )
         return self.best_params
 
+    # ---------------------------------------------------------- persistence
+
     @property
     def estimator(self):
-        """The bare fitted estimator inside the artifact."""
+        """The bare fitted estimator inside the joblib pipeline."""
         return self.model.named_steps["model"]
 
     @property
     def preprocessor(self):
         """The fitted preprocessor half of the artifact.
 
-        Named as every other family names it, so post-fit diagnostics can
-        ask any trainer for its transformer without branching on which one
-        it got.
+        Every family names it the same, so post-fit diagnostics can ask any
+        trainer for its transformer without branching on which one it got.
         """
         return self.model.named_steps["preprocess"]
 
@@ -308,12 +336,14 @@ class RandomForestTrainer(BaseTrainer):
         return self.preprocessor.transform(self.align(X))
 
     def save(self, run_dir: str | Path) -> dict[str, str]:
+        """Write the fitted joblib pipeline into ``run_dir``."""
         self.check_fitted()
         joblib.dump(self.model, Path(run_dir) / MODEL_FILENAME)
         return {"model": MODEL_FILENAME}
 
     @classmethod
     def load(cls, run_dir: str | Path) -> "RandomForestTrainer":
+        """Rebuild a fitted trainer from a run directory's joblib pipeline."""
         run_dir = Path(run_dir)
         trainer = cls.from_spec(cls.read_spec(run_dir))
         trainer.model = joblib.load(run_dir / cls.read_files(run_dir)["model"])

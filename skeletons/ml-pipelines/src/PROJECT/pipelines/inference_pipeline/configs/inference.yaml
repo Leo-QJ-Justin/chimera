@@ -25,7 +25,7 @@ model:
 input_path: data/processed/model_input.parquet
 output_path: outputs/inference/predictions.parquet
 
-# Carried through to the predictions file so the evaluation pipeline can join
-# on them. They are NOT features; the model never sees them.
+# Carried through to the predictions file so the evaluation pipeline can
+# join on them. They are not features; the model never sees them.
 key_cols: [entity_id, date]
 include_probabilities: true

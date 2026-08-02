@@ -1,10 +1,8 @@
 """Training pipeline: the orchestrator.
 
-Deliberately thin (R1.5). It owns the split, the run directory and the
-artifacts; it does **not** own how any model family is fitted. Everything
-model-shaped goes through the trainer built from the ``trainer/`` config
-group, so this file has no ``if trainer.kind == ...`` in it and adding a
-family never touches it.
+It owns the split, the run directory and the artifacts, not how any model
+family is fitted. The protocol is expressed by the trainer's own methods;
+the orchestrator sequences them and never branches on the family.
 
     model-input table
       -> split (recorded by stable key + fingerprint)
@@ -17,32 +15,14 @@ family never touches it.
       -> post-fit diagnostics (curves, importances, SHAP)
       -> trainer.save(run_dir) + metadata + snapshot + pointers
 
-The middle four steps run one of **two protocols**, and which one is the
-family's own statement rather than this file's (R1.10, R1.13). The trainer
-says how its data is shaped (``fit_frames``), what its run may claim
-(``evaluate_run``) and what ``best.json`` therefore means
-(``selection_key``); the calls below are the same three whichever family
-was built.
-
-- **standing val** (lightgbm, xgboost, torch): tune on train, fit on train
-  with val as the live referee their early stopping needs, score
-  train/val/test, select on ``selection.split``.
-- **pooled** (logreg, random_forest): a family that never reads val during
-  the fit has no reason to keep 15% of the data out of it, so tuning folds
-  over train+val, the final fit is on that pool, scores are ``dev_*``
-  (in-sample on the pool) and ``test_*``, and the selection number is a
-  k-fold CV estimate on the pool, logged as ``cv_<metric>``.
-
-Both record train/val/test membership in ``splits.json`` either way: the
-pool is built at fit time and the split is still the reproducible record.
-
-``selection.basis: cv`` overlays one thing on top of that (R1.11): a
-standing-val family still fits exactly as above - its early stopping needs
-the referee - but it *also* runs a procedure CV on train+val and selects on
-that, so its ``best.json`` number is the same yardstick a pooled family's
-is and the two families can be ranked in one output directory without
-anyone reading test. That overlay is the trainer's to apply too: the basis
-arrives as a value it reads, not as a branch taken out here.
+The trainer states how its data is shaped (``fit_frames``), what its run may
+claim (``evaluate_run``) and what ``best.json`` therefore means
+(``selection_key``). A fit with no in-fit stopping criterion never reads a
+validation split, so train and val are pooled into the fit and the run
+selects on a k-fold CV estimate over the pool; families that early-stop keep
+val as a standing referee outside the fit. Membership is recorded in
+``splits.json`` under either protocol. ``selection.basis: cv`` puts every
+family on the pooled CV yardstick without changing the fit the run ships.
 
     outputs/training/<timestamp>/
         <trainer's files>   whatever save() wrote, named in metadata
@@ -53,8 +33,8 @@ arrives as a value it reads, not as a branch taken out here.
         metrics.jsonl       structured metric sidecar (works with MLflow off)
         plots/              post-fit diagnostic figures (see modules/diagnostics.py)
 
-plus ``latest.json`` / ``best.json`` pointers at ``outputs/training/``,
-which are the only supported way to find a run (D10).
+plus ``latest.json`` / ``best.json`` pointers at ``outputs/training/``. Runs
+are found only through those pointers, never by globbing directories.
 """
 
 import logging
@@ -84,8 +64,8 @@ from .modules.splitting import record_splits, resolve_feature_columns, split_fra
 
 logger = logging.getLogger(__name__)
 
-# Rows of the training split sent along as the logged model's input example.
-# Enough to infer a signature, few enough to stay a sample.
+# Rows of the training split sent along as the logged model's input example:
+# enough for MLflow to infer a signature, few enough not to embed the data.
 _MODEL_EXAMPLE_ROWS = 5
 
 
@@ -93,7 +73,8 @@ class TrainingPipeline:
     """Split -> train -> evaluate -> persist, with one timestamp threaded."""
 
     def __init__(self, config: TrainingConfig, log_path: str | Path | None = None):
-        """
+        """Hold the configuration a run is executed from.
+
         Args:
             config: Validated training config.
             log_path: The entry script's log file, uploaded as the last
@@ -151,10 +132,9 @@ class TrainingPipeline:
             X = {name: frame[trainer.feature_columns] for name, frame in frames.items()}
             y = {name: frame[config.target] for name, frame in frames.items()}
 
-            # Which protocol this run follows is the family's call, never the
-            # orchestrator's: the trainer shapes its own fit frames, so the
-            # tune and train calls below are unconditional and adding a
-            # family still touches nothing here.
+            # The trainer shapes its own fit frames, so the tune and train
+            # calls below are unconditional: which protocol the run follows
+            # is stated by the family, not chosen here.
             fit = trainer.fit_frames(X, y)
             if config.trainer.tune.enabled:
                 with stage_timer("tune", tracker):
@@ -162,8 +142,8 @@ class TrainingPipeline:
             with stage_timer("train", tracker):
                 trainer.train(fit.X_fit, fit.y_fit, fit.X_ref, fit.y_ref)
 
-            # Values, never the config object or the tracker: a trainer scores
-            # itself and this file times the call and logs what comes back.
+            # Values, never the config object or the tracker: the trainer
+            # scores itself, and this file times the call and logs the result.
             selection = config.selection
             basis, metric_key = trainer.selection_key(
                 metric=selection.metric, basis=selection.basis, split=selection.split
@@ -238,6 +218,8 @@ class TrainingPipeline:
             space=tune.space,
         )
 
+    # ---------------------------------------------------- tracking & logging
+
     def _log_run(
         self,
         tracker,
@@ -252,7 +234,8 @@ class TrainingPipeline:
         """Params, per-iteration history, and the final metric set."""
         params = trainer.get_params()
         params.update({f"n_{name}": len(frame) for name, frame in frames.items()})
-        # Fingerprints make "is this the same split as last week?" a glance.
+        # Fingerprints let two runs' splits be compared without reopening
+        # either splits.json.
         params.update({f"split_fp_{name}": fp for name, fp in fingerprints.items()})
         params["split_mode"] = self.config.split.mode
         # Split sizes above are membership; this is what the final fit saw -
@@ -262,8 +245,8 @@ class TrainingPipeline:
         params["n_fit"] = len(fit.X_fit)
         params["selection_basis"] = basis
         params["processed_path"] = self.config.processed_path
-        # Beside the path, because the path alone answers "where did this run
-        # read?" and not "was it the same table as last week's run?".
+        # Beside the path: the path says where the run read, the hash says
+        # which version of that table it read.
         params["processed_fp"] = processed_fp
         tracker.log_params(params)
         for record in trainer.history:
@@ -272,15 +255,15 @@ class TrainingPipeline:
         tracker.log_metrics(metrics)
 
     def _log_model(self, tracker, trainer, X_fit) -> None:
-        """Log the fitted model in its own MLflow flavor, curated (D3).
+        """Log the fitted model in its own MLflow flavor.
 
         Autolog is deliberately not used: it dumps per-version parameter
         sets nobody curated, fires on every CV and tuning fit rather than
         on the run's model, and cannot attach this run's split
         fingerprints. Each trainer instead logs its own flavor once.
 
-        Failures warn: a model that could not be logged must not cost the
-        run the artifacts it already wrote (core tracking contract).
+        Tracking failures warn and never abort a run; artifacts already
+        written are never lost to a logging error.
         """
         if not tracker.live:
             return
@@ -292,18 +275,16 @@ class TrainingPipeline:
     def _log_diagnostics(self, tracker, run_dir, trainer, X_val) -> None:
         """Post-fit figures for the model itself: curves, importances, SHAP.
 
-        Deliberately *not* the trainer's job (it captures history, it does
-        not draw it) and deliberately before the run directory is uploaded,
-        so ``plots/`` mirrors into MLflow with the rest of the run and needs
-        no tracking code of its own.
+        Not the trainer's job - it captures history, it does not draw it -
+        and drawn before the run directory is uploaded, so ``plots/`` mirrors
+        into MLflow with the rest of the run and needs no tracking code of
+        its own. Failures warn, as tracking failures do: a figure that could
+        not be drawn must not cost the run its artifacts.
 
-        Failures warn, for the same reason model logging's do: a figure that
-        could not be drawn must not cost the run its artifacts.
-
-        The validation frame is the attribution sample under either protocol:
-        these figures describe how the model behaves on rows, not how well it
-        generalises, so a pooled run explaining rows it was fitted on is not
-        the same mistake as scoring them.
+        The validation frame is the attribution sample under either protocol.
+        These figures describe how the model behaves on rows, not how well it
+        generalises, so explaining rows a pooled fit consumed is not the leak
+        that scoring them would be.
         """
         options = self.config.diagnostics
         if not options.enabled:
@@ -346,13 +327,13 @@ class TrainingPipeline:
                 "split": config.split.model_dump(),
                 "split_fingerprints": fingerprints,
                 "selection": config.selection.model_dump(),
-                # What the selection number actually is, for anyone reading
-                # this run months later: "cv" means best.json holds a k-fold
-                # estimate on train+val, not a score on a standing split.
+                # What the selection number is: "cv" means best.json holds a
+                # k-fold estimate on train+val, not a score on a standing
+                # split.
                 "selection_basis": basis,
                 "selection_metric_key": metric_key,
-                # Which splits the final fit consumed, and how many rows -
-                # the honest counterpart to splits.json's membership.
+                # Which splits the final fit consumed, and how many rows: the
+                # counterpart to the membership recorded in splits.json.
                 "fit_splits": fit.fit_splits,
                 "n_fit_rows": len(fit.X_fit),
                 "metrics": metrics,
@@ -373,7 +354,7 @@ class TrainingPipeline:
             },
             # The data-pipeline config that produced the training frame, so
             # inference replays training-time preprocessing regardless of what
-            # the YAML says later (D10).
+            # the YAML says later.
             upstream_config=manifest.get("config") if manifest else None,
             tz=config.timezone,
         )
@@ -392,11 +373,11 @@ class TrainingPipeline:
             )
         except ValueError as e:
             # A pooled run's cv_* and a standing-val run's val_* estimate
-            # different things, and the pointer refuses to rank one against
-            # the other - correctly. But that refusal arrives after the fit,
-            # so it warns rather than costing the run everything it already
-            # wrote; latest.json still resolves to this run. To rank families
-            # in one output_dir, run them all with selection.basis=cv (R1.11).
+            # different things, so the pointer refuses to rank one against the
+            # other. That refusal arrives after the fit, so it warns rather
+            # than costing the run everything it already wrote; latest.json
+            # still resolves to this run. To rank families in one output_dir,
+            # run them all with selection.basis=cv.
             logger.warning("best.json left unchanged: %s", e)
             return
         logger.info(

@@ -1,6 +1,6 @@
-"""Datasets, loaders, and the feature-block registry (D11).
+"""Datasets, loaders, and the feature-block registry.
 
-The registry exists to kill the magic-slice idiom
+The registry replaces the magic-slice idiom
 (``features[43:91] / 1600``): blocks are declared once as
 ``(name, width, scale)``, offsets are *derived*, and the total width
 becomes a computed invariant that a config typo trips immediately
@@ -77,6 +77,7 @@ class FeatureBlockRegistry:
         return out
 
     def slice_of(self, name: str) -> slice:
+        """The ``slice`` covering one named block."""
         start, stop = self.offsets()[name]
         return slice(start, stop)
 
@@ -84,8 +85,8 @@ class FeatureBlockRegistry:
         """Raise if an assembled array disagrees with the declared blocks.
 
         Raises:
-            ValueError: With the per-block breakdown, because "expected
-                133, got 121" without the breakdown is a 20-minute hunt.
+            ValueError: With the per-block breakdown, which is what makes
+                "expected 133, got 121" diagnosable.
         """
         if actual_width != self.total_width:
             raise ValueError(
@@ -196,9 +197,9 @@ def make_loaders(
             re-draws every epoch; a ``break`` after N batches would train
             on the same head of the data forever.
         drop_last: ``"auto"`` drops the final training batch only when it
-            would hold a single sample - ``BatchNorm1d`` raises on a
-            batch of one in train mode, and that is a stupid way to lose
-            an epoch. ``True``/``False`` force the behaviour.
+            would hold a single sample, because ``BatchNorm1d`` raises on
+            a batch of one in train mode. ``True``/``False`` force the
+            behaviour.
 
     Returns:
         Split name -> DataLoader. Only ``train_split`` is shuffled;

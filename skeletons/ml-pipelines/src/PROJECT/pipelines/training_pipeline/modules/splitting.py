@@ -1,14 +1,17 @@
 """Split protocols and feature resolution - the training pipeline's own job.
 
-The data pipeline never splits (D5); everything here is why. Two things
-live in this module:
+Anything that needs ``.fit()`` lives inside a trainer, not the data
+pipeline, so fitted state refits per fold and serializes with the model;
+the split that decides what a fit sees belongs on the same side of that
+line. Two things live in this module:
 
-- **The holdout split** the run trains on, recorded by stable key
-  membership plus a fingerprint (D8), never by positional index.
-- **The CV splitter factory**, chosen from the configured split mode
-  rather than hardcoded. A ``TimeSeriesSplit`` baked into a base class is
-  wrong for i.i.d. tabular data and a shuffled ``KFold`` is wrong for time
-  series; D9 says the choice is per problem type, so it comes from config.
+- The holdout split the run trains on. Split membership is recorded by
+  stable row key plus a fingerprint, never by positional index, so a
+  regenerated table cannot silently shift the splits.
+- The CV splitter factory, chosen from the configured split mode rather
+  than hardcoded: a ``TimeSeriesSplit`` baked into a base class is wrong
+  for i.i.d. tabular data, and a shuffled ``KFold`` is wrong for time
+  series.
 
 Stateless functions, hence ``modules/``.
 """
@@ -34,8 +37,8 @@ def resolve_feature_columns(df: pd.DataFrame, config) -> tuple[list[str], list[s
     """Return ``(numeric, categorical)`` feature columns.
 
     Declared lists win. Empty lists fall back to dtype inference with a
-    warning: convenient on day one, but the declared form is what pins the
-    feature contract, so the warning is deliberate nagging.
+    warning: convenient on day one, but only the declared form pins the
+    feature contract, so the warning stays until they are declared.
 
     Datetime columns are never inferred as features - they are split keys
     and a leak risk; derive calendar parts in the data pipeline instead.
@@ -99,7 +102,7 @@ def split_frame(df: pd.DataFrame, split, target: str) -> dict[str, pd.DataFrame]
 
 
 def temporal_split(df: pd.DataFrame, split) -> dict[str, pd.DataFrame]:
-    """Boundary dates from config; membership still recorded (D8)."""
+    """Split on the configured boundary dates; membership is recorded as usual."""
     stamps = pd.to_datetime(df[split.time_col], errors="coerce")
     val_start = pd.Timestamp(split.boundaries["val_start"])
     test_start = pd.Timestamp(split.boundaries["test_start"])
@@ -129,7 +132,7 @@ def record_splits(run_dir, frames: dict[str, pd.DataFrame], split) -> dict[str, 
 
 
 def make_cv_splitter(mode: str, n_splits: int, seed: int):
-    """The cross-validation splitter the configured protocol implies (D9).
+    """The cross-validation splitter the run's split mode implies.
 
     Args:
         mode: The run's ``split.mode``.
@@ -142,8 +145,10 @@ def make_cv_splitter(mode: str, n_splits: int, seed: int):
         shuffled), ``GroupKFold`` for group.
     """
     if mode == "temporal":
-        # No shuffle and no seed by construction: a temporal fold is defined
-        # by order, and shuffling it is the leak D9 exists to prevent.
+        # No shuffle and no seed by construction: under temporal mode folds
+        # are chronological, so nothing about a fit - including its
+        # early-stopping monitor - sees rows later than the point it is
+        # evaluated at.
         return TimeSeriesSplit(n_splits=n_splits)
     if mode == "group":
         return GroupKFold(n_splits=n_splits)

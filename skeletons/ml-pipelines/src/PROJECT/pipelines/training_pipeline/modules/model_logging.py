@@ -11,8 +11,8 @@ Two rules encoded here, both load-bearing:
   ``start_run`` and friends); reaching for the fluent API here would
   reintroduce exactly what that avoided, and would log to whatever run
   happened to be active.
-- **Failures warn.** A model that could not be logged must never cost the
-  run the artifacts it already wrote (core tracking contract).
+- **Failures warn.** Tracking failures warn and never abort a run;
+  artifacts already written are never lost to a logging error.
 """
 
 import importlib

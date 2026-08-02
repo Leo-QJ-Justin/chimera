@@ -1,18 +1,16 @@
 """Logging bootstrap: configured once at the entry point, never at import.
 
-Rules enforced by convention (see the skeleton READMEs):
-- every module does ``logger = logging.getLogger(__name__)``;
-- pure helper modules never log;
-- scalars go through the logger, pre-formatted multi-line blocks through
-  ``print`` (a level prefix would mangle them);
-- the returned log-file path is uploaded as a run artifact by the caller.
+Conventions: every module does ``logger = logging.getLogger(__name__)``;
+pure helper modules never log; scalars go through the logger while
+pre-formatted multi-line blocks go through ``print``, since a level prefix
+would mangle them; and the returned log-file path is uploaded as a run
+artifact by the caller.
 
-Two modes:
-- programmatic (default): package logger, tz-aware formatter, optional
-  timestamped file handler;
-- YAML dictConfig (production tier): pass ``config_path``; handler
-  filenames are rebound into ``log_dir`` at load time and a broken config
-  degrades to ``basicConfig`` rather than dying.
+Two modes: programmatic (default) gives a package logger, a tz-aware
+formatter and an optional timestamped file handler; passing
+``config_path`` switches to YAML ``dictConfig``, where handler filenames
+are rebound into ``log_dir`` at load time and a broken config falls back
+to ``basicConfig`` rather than failing the run.
 """
 
 import logging
@@ -46,9 +44,20 @@ def configure_logging(
 ) -> Path | None:
     """Configure logging once; idempotent on re-call.
 
+    Args:
+        package: Logger name the handlers are attached to. Propagation is
+            disabled so records are not duplicated by the root logger.
+        level: Level for the package logger.
+        log_dir: Directory for the timestamped log file. Without it,
+            console logging only.
+        log_prefix: Filename prefix for the log file.
+        tz: Timezone for record timestamps and the filename stamp.
+        config_path: YAML ``dictConfig`` file. When given, it replaces the
+            programmatic configuration entirely.
+
     Returns:
-        The log file path when file logging is active (log it as a run
-        artifact), else None.
+        The log file path when file logging is active, so the caller can
+        upload it as a run artifact; otherwise None.
     """
     if config_path is not None:
         return _configure_from_yaml(config_path, log_dir, level)
@@ -78,7 +87,14 @@ def configure_logging(
 def _configure_from_yaml(
     config_path: str | Path, log_dir: str | Path | None, fallback_level: int
 ) -> Path | None:
-    """dictConfig with log-dir rebinding; degrades to basicConfig."""
+    """Apply a YAML dictConfig, rebinding handler files into ``log_dir``.
+
+    Any failure falls back to ``basicConfig`` and logs the reason, so a
+    malformed logging config cannot stop the run.
+
+    Returns:
+        The first rebound handler filename, or None.
+    """
     logger = logging.getLogger(__name__)
     try:
         import yaml

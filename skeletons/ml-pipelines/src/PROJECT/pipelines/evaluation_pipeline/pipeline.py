@@ -1,13 +1,13 @@
 """Evaluation pipeline: predictions + ground truth -> report.
 
-The fourth pipeline (R1.2). It consumes what ``run_inference.py``
-produced and joins it to the model-input table's labels **by key**, never by row
-position: the two files are written by different runs and need not share
-an order.
+The fourth pipeline. It consumes what ``run_inference.py`` produced and
+joins it to the model-input table's labels by key, never by row position:
+the two files are written by different runs and need not share an order.
 
-It never builds a sample and never touches a model. That is the one data
-path rule (D4) stated as a directory boundary - if this pipeline ever
-needs to preprocess something, the preprocessing belongs upstream.
+It never builds a sample and never touches a model. Predictions are
+produced exactly once, by the inference pipeline; evaluation only joins
+and scores that file. If this pipeline ever needs to preprocess something,
+the preprocessing belongs upstream.
 
     outputs/evaluation/<timestamp>/
         report.json    metrics, per-class table, error summary, triage rows
@@ -50,11 +50,24 @@ class EvaluationPipeline:
     """Join, score, triage, report."""
 
     def __init__(self, config: EvaluationConfig, log_path: str | Path | None = None):
+        """Initialize the pipeline.
+
+        Args:
+            config: Validated evaluation config.
+            log_path: The entry script's log file, uploaded as the last
+                run artifact so it captures everything before it.
+        """
         self.config = config
         self.log_path = log_path
 
+    # ----------------------------------------------------------------- stages
+
     def run(self) -> Path:
-        """Write the evaluation report and return its run directory."""
+        """Write the evaluation report.
+
+        Returns:
+            The run directory the report was written into.
+        """
         config = self.config
         timestamp = generate_timestamp(config.timezone)
         run_dir = make_run_dir(config.output_dir, timestamp)
@@ -112,14 +125,13 @@ class EvaluationPipeline:
 
         The training run hashed the model-input table it read; this rehashes
         the one being scored against. A mismatch means the file changed
-        underneath the two runs, so every number below describes a different
-        population than the one the training run published - which is a
-        thing to say in the log, not a thing to guess about later.
+        between the two runs, so every number in the report describes a
+        different population than the one the training run published.
 
-        Warns rather than aborts, the same posture the join takes on
-        unmatched rows: re-scoring an old model on refreshed data is a
-        legitimate thing to do deliberately and a bad thing to do by
-        accident, and only the reader can tell which this is.
+        It warns rather than aborts, the same posture the join takes on
+        unmatched rows: re-scoring an old model on refreshed data is
+        legitimate when deliberate and a defect when accidental, and only
+        the reader can tell the two apart.
 
         The run consulted is the one ``best.json`` names, which is the model
         ``run_inference.py`` loads by default. Silent when there is no
@@ -146,7 +158,11 @@ class EvaluationPipeline:
             )
 
     def _join(self) -> pd.DataFrame:
-        """Predictions + ground truth, matched on the declared keys.
+        """Match predictions to ground truth on the declared keys.
+
+        Returns:
+            The inner join of the two files, carrying the target, the
+            prediction column and any triage drill-down columns.
 
         Raises:
             KeyError: A key or the target/prediction column is absent.
@@ -189,6 +205,7 @@ class EvaluationPipeline:
 
     @staticmethod
     def _require(frame: pd.DataFrame, columns: list[str], what: str) -> None:
+        """Raise a KeyError naming the file that is missing columns."""
         missing = [c for c in columns if c not in frame.columns]
         if missing:
             raise KeyError(f"{what} is missing required column(s): {missing}")
@@ -196,11 +213,19 @@ class EvaluationPipeline:
     # ----------------------------------------------------------------- plots
 
     def _write_plots(self, run_dir: Path, joined: pd.DataFrame) -> tuple[list, dict]:
-        """Draw the report's figures, or say why there are none.
+        """Draw the report's figures, or log why there are none.
 
         Failures warn rather than abort, and each figure is guarded
-        individually inside the module: a report that lost one plot is
-        still a report.
+        individually inside the module, so a report missing one figure is
+        still written.
+
+        Args:
+            run_dir: Directory the figures are written into.
+            joined: Predictions joined to ground truth.
+
+        Returns:
+            ``(plot_paths, curve_metrics)``; both empty when plotting is
+            disabled or failed.
         """
         config = self.config
         if not config.plots.enabled:
@@ -223,6 +248,20 @@ class EvaluationPipeline:
     def _build_report(
         self, joined: pd.DataFrame, metrics: dict, timestamp: str, plots: list
     ) -> dict:
+        """Assemble the report payload.
+
+        The triage frame is carried under ``_triage_frame`` for the
+        markdown renderer and removed before the JSON is written.
+
+        Args:
+            joined: Predictions joined to ground truth.
+            metrics: Scalar metrics, including any from the curves.
+            timestamp: This evaluation run's timestamp.
+            plots: Relative paths of the figures that were written.
+
+        Returns:
+            The report payload.
+        """
         config = self.config
         triage = worst_cases(
             joined,
@@ -260,11 +299,18 @@ class EvaluationPipeline:
         """Contrast this report with the value ``best.json`` recorded.
 
         A large gap usually means the two numbers are not measuring the
-        same thing - typically this run scored the full model-input table while
-        ``best.json`` recorded a validation split, or a k-fold estimate on
-        train+val for a family that pools them (R1.10). The basis travels
-        with the comparison for exactly that reason: the delta is only
-        readable once you know what the training number was.
+        same thing. Typically this run scored the full model-input table
+        while ``best.json`` recorded a validation split, or a k-fold CV
+        estimate over the train+val pool for a family that pools them. The
+        basis travels with the comparison for that reason: the delta is
+        only readable once the training number's basis is known.
+
+        Args:
+            metrics: This evaluation's metrics.
+
+        Returns:
+            The comparison payload, or None when comparison is disabled,
+            no best run exists, or the selection metric is absent here.
         """
         config = self.config
         if not config.compare_to_best:
@@ -303,6 +349,7 @@ class EvaluationPipeline:
         }
 
     def _write_report(self, run_dir: Path, report: dict) -> None:
+        """Write ``report.json`` and its markdown rendering."""
         triage = report.pop("_triage_frame")
         (run_dir / REPORT_JSON).write_text(
             json.dumps(make_serialisable(report), indent=2)
@@ -310,6 +357,7 @@ class EvaluationPipeline:
         (run_dir / REPORT_MD).write_text(self._render_markdown(report, triage))
 
     def _render_markdown(self, report: dict, triage: pd.DataFrame) -> str:
+        """Render the report as markdown, section by section."""
         config = self.config
         lines = [
             f"# Evaluation report {report['timestamp']}",
@@ -360,12 +408,21 @@ class EvaluationPipeline:
         return "\n".join(lines)
 
 
+# ---------------------------------------------------------------- helpers
+
+
 def _describe_basis(best_metric: str) -> str:
-    """What kind of number ``best.json`` holds, from its metric key.
+    """Name the kind of number ``best.json`` holds, from its metric key.
 
     The training pipeline prefixes the key with the basis it selected on
     (``val_``, ``test_``, or ``cv_`` for the pooled protocol), so the
-    report can say "that was a CV estimate" without loading the run.
+    report can name the basis without loading the training run.
+
+    Args:
+        best_metric: Metric key recorded in ``best.json``.
+
+    Returns:
+        A phrase describing the basis, for the log line and the report.
     """
     prefix = best_metric.split("_", 1)[0]
     return {
@@ -376,6 +433,7 @@ def _describe_basis(best_metric: str) -> str:
 
 
 def _read(path: str | Path) -> pd.DataFrame:
+    """Read an evaluation input; ``.csv``/``.parquet`` chosen by suffix."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Evaluation input not found: {path}")

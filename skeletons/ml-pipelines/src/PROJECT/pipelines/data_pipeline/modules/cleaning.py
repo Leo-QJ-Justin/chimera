@@ -1,12 +1,11 @@
 """Stateless cleaning and feature functions.
 
-**The contract (D5).** Everything in this module is *stateless*: it may
-look at a row, a config value, or a column's declared dtype, but it may
-never learn a statistic from the training data that inference would have
-to reuse. If it needs ``.fit()`` - an imputer's median, a scaler's mean,
-an encoder's category list - it belongs in the training pipeline's
-trainer, where per-fold refitting is free and the fitted state is
-serialized with the model.
+The contract: everything in this module is stateless. It may look at a
+row, a config value, or a column's declared dtype, but it may never learn
+a statistic from the training data that inference would have to reuse.
+Anything that needs ``.fit()`` - an imputer's median, a scaler's mean, an
+encoder's category list - lives inside a trainer, not the data pipeline,
+so fitted state refits per fold and serializes with the model.
 
 Being stateless is also why these are plain functions in ``modules/``
 rather than objects in ``classes/``: there is nothing to hold.
@@ -41,10 +40,10 @@ def load_raw(path: str | Path, date_col: str | None = None) -> pd.DataFrame:
 def clean(
     df: pd.DataFrame, cleaning: CleaningConfig, key_cols: list[str]
 ) -> tuple[pd.DataFrame, dict[str, int]]:
-    """Row-level cleaning. STATELESS - see the module docstring.
+    """Row-level cleaning. Stateless - see the module docstring.
 
-    Row drops live here rather than in a fitted transformer because
-    transformers cannot drop rows or touch ``y`` (D6).
+    Row drops live here rather than in a fitted transformer because a
+    transformer inside the model pipeline cannot drop rows or touch ``y``.
 
     Args:
         df: The raw frame.
@@ -52,8 +51,8 @@ def clean(
         key_cols: Dedup subset when ``cleaning.dedup_subset`` is null.
 
     Returns:
-        ``(clean_frame, rejection_counts)``. The counts are per-reason,
-        so a run reports *why* rows disappeared instead of only how many.
+        ``(clean_frame, rejection_counts)``. The counts are per-reason, so
+        a run reports why rows disappeared and not only how many.
     """
     counts: dict[str, int] = {"input_rows": len(df)}
     df = df.copy()
@@ -92,11 +91,20 @@ def clean(
 def engineer_features(
     df: pd.DataFrame, features: FeatureEngineeringConfig, date_col: str | None
 ) -> pd.DataFrame:
-    """Derive stateless features. STATELESS - see the module docstring.
+    """Derive stateless features. Stateless - see the module docstring.
 
-    Calendar parts are the archetype: they depend only on the row. Replace
-    the body with the project's own derivations; anything that needs a
-    fitted statistic goes in the training pipeline instead.
+    Calendar parts are the reference case: they depend only on the row.
+    Replace the body with the project's own derivations; anything that
+    needs a fitted statistic goes in the training pipeline instead.
+
+    Args:
+        df: Cleaned frame.
+        features: Feature-engineering knobs.
+        date_col: Timestamp column the calendar parts derive from.
+
+    Returns:
+        A copy of the frame with derived columns added and configured
+        columns dropped.
     """
     df = df.copy()
     if features.date_parts and date_col and date_col in df.columns:

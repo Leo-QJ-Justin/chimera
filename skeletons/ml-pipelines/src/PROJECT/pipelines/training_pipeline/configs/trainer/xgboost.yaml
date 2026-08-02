@@ -1,13 +1,10 @@
 # @package trainer
 #
 # Config group: pick with `python run_training.py trainer=xgboost`.
-# Requires the `xgboost` optional dependency group.
-#
-# Its own fit path for the same reason LightGBM has one - early stopping
-# needs the *transformed* validation matrix. The wiring differs:
-# early_stopping_rounds is a constructor argument in xgboost >= 1.6, and it
-# raises when set with no eval_set, so the trainer attaches it only when
-# there is a validation split to stop on.
+# Requires the `xgboost` optional dependency group. Its own fit path, for the
+# reason LightGBM has one; early_stopping_rounds is a constructor argument in
+# xgboost >= 1.6 and raises with no eval_set, so the trainer attaches it only
+# when there is a validation split.
 kind: xgboost
 
 params:
@@ -30,17 +27,12 @@ tune:
   # Requires the `tune` extra (optuna). As with LightGBM, the search carves
   # one 20% holdout off the rows it is handed - the chronological tail under
   # `split.mode: temporal` - and every trial early-stops against it and is
-  # then scored on it. So a trial is shaped like the fit the run ships, and
-  # a winning n_estimators is a ceiling that was stopped short of. Known
-  # bias: a trial is scored on the rows it stopped against, so the winning
-  # score is optimistic; test stays untouched.
-  #
-  # `cv` is NOT read by this search. It still sets the fold count of the
-  # selection CV under `selection.basis: cv` (R1.11) - and that CV also
-  # early-stops, because each fold carves its own stopping subset out of its
-  # training rows.
+  # then scored on it, so the winning score is optimistic; test is untouched.
   enabled: false
   n_trials: 20
+  # Not read by this search. It sets the fold count of the selection CV under
+  # `selection.basis: cv`, which also early-stops: each fold carves its own
+  # stopping subset out of its training rows.
   cv: 3
   # A *project metric alias* - the vocabulary evaluate() and the evaluation
   # report speak (f1_macro | accuracy | rmse | mae | r2), never a sklearn

@@ -1,22 +1,18 @@
 """``LightGBMTrainer``: the native fit path, with ``eval_set`` early stopping.
 
-Why its early stopping needs a fit path of its own: it wants the
-**transformed** validation matrix at fit time, and a sklearn ``Pipeline``
-cannot carry one - ``pipeline.fit(X, y, model__eval_set=...)`` hands the
-booster *untransformed* validation data, which either raises or, worse,
-silently stops on a garbage curve.
+Early stopping needs a fit path of its own because it wants the transformed
+validation matrix at fit time, and a sklearn ``Pipeline`` cannot carry one:
+``pipeline.fit(X, y, model__eval_set=...)`` hands the booster untransformed
+validation data, which either raises or stops on a garbage curve. So the
+two halves are fitted in order - preprocessor on train, booster on the
+transformed matrices - and only then assembled into one ``Pipeline``
+artifact, which makes a LightGBM run indistinguishable from any other at
+serving time.
 
-So the two halves are fitted in order (preprocessor on train, booster on
-the transformed matrices) and only then assembled into one
-``Pipeline`` artifact, which makes a LightGBM run indistinguishable from
-any other at serving time.
-
-Cross-validation and tuning both give a fit its referee rather than doing
-without one: a CV fold carves a stopping subset out of its own training
-rows (R1.11), and the search carves one holdout up front that every trial
-early-stops against and is then scored on. So a tuned ``n_estimators`` is
-the ceiling a trial stopped short of, not a round count anyone trained to
-the end.
+Cross-validation and tuning both give a fit its referee: a CV fold carves a
+stopping subset out of its own training rows, and the search carves one
+holdout up front that every trial early-stops against and is then scored
+on. A tuned ``n_estimators`` is the ceiling a trial stopped short of.
 """
 
 import logging
@@ -72,7 +68,8 @@ class LightGBMTrainer(BaseTrainer):
     kind = "lightgbm"
     scale_numeric = False
     # Early stopping reads the validation curve during the fit, so val must
-    # stay outside the training data: standing-val protocol (R1.10).
+    # stay outside the training data: it is a standing referee, not part of
+    # the fit.
     uses_val_in_fit = True
 
     # Defaults for the search; `trainer.tune.space` narrows any of them and
@@ -86,6 +83,8 @@ class LightGBMTrainer(BaseTrainer):
         "reg_lambda": FloatSpace(low=1e-8, high=10.0, log=True),
     }
 
+    # --------------------------------------------------------- construction
+
     def __init__(
         self,
         params: dict | None = None,
@@ -94,12 +93,14 @@ class LightGBMTrainer(BaseTrainer):
         log_period: int = 0,
         **kwargs,
     ):
+        """Build an unfitted trainer with this family's early-stopping knobs."""
         super().__init__(params, **kwargs)
         self.early_stopping_rounds = early_stopping_rounds
         self.log_period = log_period
         self.best_iteration: int | None = None
 
     def extra_spec(self) -> dict:
+        """The harness knobs :meth:`load` hands back to ``__init__``."""
         return {
             "early_stopping_rounds": self.early_stopping_rounds,
             "log_period": self.log_period,
@@ -117,13 +118,15 @@ class LightGBMTrainer(BaseTrainer):
     def _get_param_space(self, trial, space: dict) -> dict:
         return {name: entry.suggest(trial, name) for name, entry in space.items()}
 
+    # ---------------------------------------------------------- fit & train
+
     def fit_frames(self, X: dict, y: dict) -> FitFrames:
         """The standing-val protocol: fit on train, val stays the referee.
 
-        Val is handed back as the referee frames rather than pooled into the
-        fit, because that is exactly what this family's early stopping reads
-        during the fit - rows inside the training data cannot referee it
-        (R1.10). Test is untouched either way.
+        This family early-stops, so val is handed back as the referee frames
+        rather than pooled into the fit: it is exactly what the fit reads,
+        and rows inside the training data cannot referee it. Test is
+        untouched either way.
         """
         return FitFrames(X["train"], y["train"], X["val"], y["val"], ["train"])
 
@@ -192,11 +195,15 @@ class LightGBMTrainer(BaseTrainer):
         self.model = Pipeline([("preprocess", preprocessor), ("model", booster)])
         self.fitted = True
 
+    # --------------------------------------------------- predict & evaluate
+
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Class labels (or regression values) from the fitted booster."""
         self.check_fitted()
         return np.asarray(self.model.predict(self.align(X)))
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray | None:
+        """Class probabilities from the fitted booster; None for regression."""
         self.check_fitted()
         if self.task == "regression":
             return None
@@ -204,6 +211,7 @@ class LightGBMTrainer(BaseTrainer):
 
     @property
     def classes_(self) -> np.ndarray | None:
+        """Class labels in the order :meth:`predict_proba` returns them."""
         return None if self.model is None else getattr(self.model, "classes_", None)
 
     def evaluate(
@@ -236,12 +244,28 @@ class LightGBMTrainer(BaseTrainer):
         Under ``selection.basis: cv`` the fit above is untouched - this
         family's early stopping still needs its standing referee - but the
         number ``best.json`` records becomes a procedure CV over the
-        train+val pool, where each fold carves its own referee (R1.11). That
-        is what a pooled family's ``cv_`` number already is, so the two rank
-        against each other. The std travels with the mean because a
-        selection criterion is a random variable: two runs 0.002 apart on a
-        fold spread of 0.05 have not been distinguished (Cawley & Talbot
-        2010).
+        train+val pool. Cross-validation reruns the family's whole training
+        procedure per fold - a fresh trainer, its own preprocessing, its own
+        stopping carve - so the estimate describes the procedure the run
+        actually ships, which is what a pooled family's ``cv_`` number
+        already is and what lets the two rank against each other. The std
+        travels with the mean because a selection criterion is a random
+        variable: two runs 0.002 apart on a fold spread of 0.05 have not
+        been distinguished (Cawley & Talbot 2010).
+
+        Args:
+            X: ``{"train"/"val"/"test": features}``, the realized split.
+            y: The matching targets, under the same keys.
+            X_fit: The frames the fit consumed. Unread here.
+            y_fit: The matching targets. Unread here.
+            metric: ``selection.metric``, a project metric alias.
+            cv: Fold count for the CV estimate under ``basis: cv``.
+            basis: ``selection.basis`` (``auto`` | ``cv``).
+            split: ``selection.split``, named in the line logged about it.
+
+        Returns:
+            The ``train_*``, ``val_*`` and ``test_*`` scores, plus
+            ``cv_<metric>`` and ``cv_<metric>_std`` under ``basis: cv``.
         """
         metrics: dict[str, float] = {}
         for name in ("train", "val", "test"):
@@ -282,11 +306,22 @@ class LightGBMTrainer(BaseTrainer):
         out-of-sample number and is honoured. ``selection.basis: cv`` trades
         it for the procedure-CV estimate every family can publish, which is
         what makes runs of different families rankable in one output
-        directory (R1.11).
+        directory.
+
+        Args:
+            metric: ``selection.metric``, a project metric alias.
+            basis: ``selection.basis`` (``auto`` | ``cv``).
+            split: ``selection.split``, the split whose score ranks the run.
+
+        Returns:
+            ``("cv", "cv_<metric>")`` under the CV basis, otherwise
+            ``(split, "<split>_<metric>")``.
         """
         if basis == "cv":
             return "cv", f"cv_{metric}"
         return split, f"{split}_{metric}"
+
+    # -------------------------------------------------- hyperparameter_tune
 
     def hyperparameter_tune(
         self,
@@ -307,12 +342,12 @@ class LightGBMTrainer(BaseTrainer):
         :meth:`evaluate`. That is this family's real procedure: a booster
         without a referee trains its full ``n_estimators``, so a k-fold
         search would rank candidates by a fit shaped unlike the one the run
-        ships. ``cv`` is therefore **not read here** - it still sets the fold
+        ships. ``cv`` is therefore not read here; it still sets the fold
         count of the selection CV under ``selection.basis: cv``.
 
         Known bias: trials are scored on the same rows they early-stopped
-        against, so the winning score is optimistic. The honest number
-        remains the training pipeline's untouched test split.
+        against, so the winning score is optimistic. The out-of-sample
+        number remains the training pipeline's untouched test split.
 
         Args:
             n_trials: Optuna trials; each costs one early-stopped fit.
@@ -357,12 +392,12 @@ class LightGBMTrainer(BaseTrainer):
             candidate.train(X_fit, y_fit, X_stop, y_stop)
             return candidate.evaluate(X_stop, y_stop, metrics=[metric])[metric]
 
-        # An unseeded sampler makes the search trajectory unreplayable even
-        # when the seed, the data and the space are all pinned.
+        # Seed the sampler: without it the search trajectory is unreplayable
+        # even when the seed, the data and the space are all pinned.
         optuna_kwargs.setdefault("sampler", optuna.samplers.TPESampler(seed=self.seed))
         study = optuna.create_study(direction=direction, **optuna_kwargs)
-        # show_progress_bar is off: the bar writes to stderr and interleaves
-        # with the run's log file, which is the thing anyone reads afterwards.
+        # show_progress_bar is off: it writes to stderr and interleaves with
+        # the run's structured log lines.
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
         self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
@@ -377,13 +412,17 @@ class LightGBMTrainer(BaseTrainer):
         )
         return self.best_params
 
+    # ---------------------------------------------------------- persistence
+
     def training_summary(self) -> dict:
+        """Where the booster stopped, for ``metadata.json``."""
         return {
             "best_iteration": self.best_iteration,
             "early_stopping_rounds": self.early_stopping_rounds,
         }
 
     def get_params(self) -> dict:
+        """Tracker params, plus this booster's stopping detail."""
         params = super().get_params()
         params["early_stopping_rounds"] = self.early_stopping_rounds
         if self.best_iteration is not None:
@@ -399,9 +438,8 @@ class LightGBMTrainer(BaseTrainer):
     def preprocessor(self):
         """The fitted preprocessor half of the artifact.
 
-        Named as every other family names it, so post-fit diagnostics can
-        ask any trainer for its transformer without branching on which one
-        it got.
+        Every family names it the same, so post-fit diagnostics can ask any
+        trainer for its transformer without branching on which one it got.
         """
         return self.model.named_steps["preprocess"]
 
@@ -410,12 +448,14 @@ class LightGBMTrainer(BaseTrainer):
         return self.preprocessor.transform(self.align(X))
 
     def save(self, run_dir: str | Path) -> dict[str, str]:
+        """Write the fitted preprocessor+booster pipeline into ``run_dir``."""
         self.check_fitted()
         joblib.dump(self.model, Path(run_dir) / MODEL_FILENAME)
         return {"model": MODEL_FILENAME}
 
     @classmethod
     def load(cls, run_dir: str | Path) -> "LightGBMTrainer":
+        """Rebuild a fitted trainer from the run directory's saved pipeline."""
         run_dir = Path(run_dir)
         trainer = cls.from_spec(cls.read_spec(run_dir))
         trainer.model = joblib.load(run_dir / cls.read_files(run_dir)["model"])

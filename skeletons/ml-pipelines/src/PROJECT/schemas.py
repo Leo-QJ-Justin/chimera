@@ -2,9 +2,9 @@
 
 Hydra composes the config files; these models validate what came out.
 Every section subclasses a base in ``core.config`` so cross-pipeline
-sections (logging, mlflow, split) stay one definition - the mistake this
-avoids is the corpus pattern where one pipeline re-declared its own
-``LoggingConfig`` as a bare ``BaseModel`` and drifted.
+sections (logging, mlflow, split) stay one definition. Re-declaring one of
+them as a bare ``BaseModel`` inside a single pipeline would let the two
+definitions drift apart.
 
 Custom validators here express only what pydantic cannot: cross-field
 rules (feature lists must not contain the target, temporal splits need a
@@ -59,7 +59,7 @@ class ProjectLoggingConfig(LoggingConfig):
 
 
 class MonitorConfig(BaseModel):
-    """The single monitored metric for iterative trainers: "better", named once."""
+    """The single monitored metric for iterative trainers, and its direction."""
 
     model_config = {"extra": "ignore"}
 
@@ -70,7 +70,7 @@ class MonitorConfig(BaseModel):
 
 
 class TorchTrainerConfig(BaseModel):
-    """Harness knobs for ``TorchTrainer`` - the loop, not the architecture.
+    """Harness knobs for ``TorchTrainer``: the loop, not the architecture.
 
     Architecture lives in ``TrainerConfig.params`` because it decides the
     shapes a checkpoint carries; everything here decides what the loop does
@@ -131,8 +131,8 @@ class IntSpace(BaseModel):
 
     # Forbidden rather than ignored, unlike the composite sections above: a
     # range is typed by hand into a trainer file, nothing composes extra keys
-    # into it, and it is what makes the ParamSpace union deterministic -
-    # `choices` can only ever be a ChoiceSpace.
+    # into it, and forbidding extras is what makes the ParamSpace union
+    # deterministic - `choices` can only ever resolve to a ChoiceSpace.
     model_config = {"extra": "forbid"}
 
     low: int
@@ -205,12 +205,13 @@ class TuneConfig(BaseModel):
 
     enabled: bool = False
     n_trials: int = 20
-    # Folds for the tuning CV. The *splitter* comes from split.mode (D9),
-    # never a hardcoded TimeSeriesSplit. Families whose fit needs a stopping
-    # referee score their trials on a carved holdout instead and ignore this.
+    # Folds for the tuning CV. The splitter follows the run's configured
+    # split mode, never a hardcoded TimeSeriesSplit. Families whose fit needs
+    # a stopping referee score their trials on a carved holdout and ignore
+    # this.
     cv: int = 3
-    # A *project metric alias* - the same vocabulary evaluate() and the
-    # evaluation report speak: "f1_macro", "accuracy", "rmse", "mae", "r2".
+    # A project metric alias, the same vocabulary evaluate() and the
+    # evaluation report use: "f1_macro", "accuracy", "rmse", "mae", "r2".
     # Never a sklearn scoring string. None -> the task default.
     metric: str | None = None
     # None -> inferred from the metric (error-like metrics minimize, the rest
@@ -227,8 +228,8 @@ class TuneConfig(BaseModel):
 class TrainerConfig(BaseModel):
     """One entry of the ``trainer/`` config group.
 
-    ``kind`` **is** the family: it names the trainer class, the config
-    group file, and ``model_type`` in the saved metadata. ``params`` are
+    ``kind`` is the family: it names the trainer class, the config group
+    file, and ``model_type`` in the saved metadata. ``params`` are
     that family's own estimator kwargs. The per-family sections below carry
     harness knobs only one trainer reads; an unused section costs nothing
     and keeps ``trainer=<kind>`` a single-file swap.
@@ -250,7 +251,7 @@ class TrainerConfig(BaseModel):
 
 
 class CleaningConfig(BaseModel):
-    """Knobs for the STATELESS cleaning stage (nothing here may ``.fit()``)."""
+    """Knobs for the stateless cleaning stage; nothing here may ``.fit()``."""
 
     model_config = {"extra": "ignore"}
 
@@ -262,7 +263,7 @@ class CleaningConfig(BaseModel):
 
 
 class FeatureEngineeringConfig(BaseModel):
-    """Knobs for the STATELESS feature stage."""
+    """Knobs for the stateless feature stage."""
 
     model_config = {"extra": "ignore"}
 
@@ -331,6 +332,7 @@ class TrainingSplitConfig(SplitConfig):
 
     @model_validator(mode="after")
     def validate_temporal_inputs(self):
+        """Require a time column and boundaries under temporal mode."""
         if self.mode != "temporal":
             return self
         if not self.time_col:
@@ -353,13 +355,13 @@ class SelectionConfig(BaseModel):
     metric: str = "f1_macro"
     mode: Literal["min", "max"] = "max"
     split: Literal["val", "test"] = "val"
-    # Which number best.json records (R1.11). "auto": each family's own
-    # protocol decides - a standing-val family selects on `split`, a pooled
-    # one on its CV estimate, and the two are deliberately not rankable
-    # against each other. "cv": every family selects on a procedure-CV
-    # estimate over train+val, which is the one yardstick runs of different
-    # families can be ranked on - at the cost of k extra fits for a
-    # standing-val family, whose train_/val_/test_ metrics are unchanged.
+    # Which number best.json records. "auto": each family's own protocol
+    # decides - a standing-val family selects on `split`, a pooled one on
+    # its CV estimate, and the two are deliberately not rankable against
+    # each other. "cv": every family selects on a procedure-level CV
+    # estimate over train+val, the one basis runs of different families can
+    # be ranked on, at the cost of k extra fits for a standing-val family,
+    # whose train_/val_/test_ metrics are unchanged.
     basis: Literal["auto", "cv"] = "auto"
 
 
@@ -367,9 +369,9 @@ class ShapConfig(BaseModel):
     """SHAP attributions over a sample of the validation design matrix.
 
     Sampled rather than exhaustive: an exact explainer is superlinear in
-    rows, and the beeswarm of 200 rows says what the beeswarm of 20,000
-    says. Needs the optional ``explain`` extra; without it the step logs
-    one line and is skipped.
+    rows, and a few hundred rows produce the same reading as tens of
+    thousands. Needs the optional ``explain`` extra; without it the step
+    logs one line and is skipped.
     """
 
     model_config = {"extra": "ignore"}
@@ -491,7 +493,7 @@ class ModelSelectionConfig(BaseModel):
 
 
 class InferenceConfig(RunConfig):
-    """Metadata-first reload + the same sample path training used (D4)."""
+    """Metadata-first reload, on the same sample path training used."""
 
     model_config = {"extra": "ignore"}
 
@@ -505,6 +507,7 @@ class InferenceConfig(RunConfig):
 
     @model_validator(mode="after")
     def validate_output_and_selection(self):
+        """Check the output format and warn when a timestamp overrides ``use``."""
         suffix = Path(self.output_path).suffix
         if suffix not in (".parquet", ".csv"):
             raise ValueError(f"output_path must end in .parquet or .csv, got {suffix!r}")
@@ -532,9 +535,9 @@ class TriageConfig(BaseModel):
 class PlotsConfig(BaseModel):
     """Prediction-based figures for the evaluation report.
 
-    Drawn from the predictions table alone (no model, no features), which
-    is what keeps them on this side of the D4 boundary. ROC, PR and
-    calibration additionally need the ``proba_*`` columns inference writes
+    Drawn from the predictions table alone: no model, no features, so the
+    figures stay on the scoring side of the one-data-path boundary. ROC, PR
+    and calibration additionally need the ``proba_*`` columns inference writes
     when ``include_probabilities`` is on; without them the confusion
     matrix is still drawn and a log line says why the rest were not.
     """
@@ -547,9 +550,10 @@ class PlotsConfig(BaseModel):
 class EvaluationConfig(RunConfig):
     """predictions + ground truth -> metrics report + error triage.
 
-    Deliberately has no model, no feature list and no preprocessing: this
-    pipeline consumes what inference produced (D4). If it ever needs to
-    *build* a sample, that is the bug the one-data-path rule prevents.
+    Deliberately has no model, no feature list and no preprocessing.
+    Predictions are produced exactly once, by the inference pipeline;
+    evaluation only joins and scores that file. Needing to build a sample
+    here is the failure this separation prevents.
     """
 
     model_config = {"extra": "ignore"}
@@ -571,6 +575,7 @@ class EvaluationConfig(RunConfig):
 
     @model_validator(mode="after")
     def validate_join_and_metric(self):
+        """Require join keys and a metric this task actually produces."""
         if not self.key_cols:
             raise ValueError(
                 "key_cols must not be empty: predictions are joined to ground "
@@ -592,9 +597,14 @@ def metric_names(task: str) -> tuple[str, ...]:
 def check_metric(metric: str, task: str, field: str) -> None:
     """Reject a selection metric the run will never emit.
 
-    Two configs select a run by metric (training's ``best.json``,
-    evaluation's comparison); both would otherwise fail *after* the work,
-    at pointer-update time.
+    Two configs select a run by metric: training's ``best.json`` and
+    evaluation's comparison. Both would otherwise fail after the work is
+    done, at pointer-update time.
+
+    Args:
+        metric: Metric alias the config named.
+        task: ``"classification"`` or ``"regression"``.
+        field: Config field path, used in the error message.
 
     Raises:
         ValueError: If ``metric`` is not produced for ``task``.
@@ -611,8 +621,8 @@ def bootstrap(cfg, schema_cls: type[BaseModel]):
     """Validate a composed Hydra config and configure logging, once.
 
     Coerce to a plain dict, surface sections the schema ignores, validate,
-    start logging, then report which values came from defaults - in that
-    order, because the defaults report is useless before handlers exist.
+    start logging, then report which values came from defaults. The order
+    matters: the defaults report has nowhere to go before handlers exist.
 
     Args:
         cfg: The ``DictConfig`` handed over by ``@hydra.main``.

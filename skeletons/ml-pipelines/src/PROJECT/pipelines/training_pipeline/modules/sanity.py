@@ -1,9 +1,9 @@
 """The overfit-single-batch sanity check.
 
-Cheapest architecture bug detector there is: a model that cannot drive
-one batch to near-perfect fit has a wiring problem (wrong loss, frozen
-parameters, detached graph, LR of zero), and no amount of epochs on the
-full dataset will fix it. Runs in seconds before the real training.
+The cheapest architecture bug detector available: a model that cannot
+drive one batch to a near-perfect fit has a wiring problem (wrong loss,
+frozen parameters, detached graph, LR of zero), and no amount of epochs on
+the full dataset will fix it. It runs in seconds, before the real training.
 
 It builds its **own** model, optimizer and loss internally: the check
 must not leave the training model or optimizer polluted with 100 steps

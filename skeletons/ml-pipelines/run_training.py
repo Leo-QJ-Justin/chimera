@@ -7,10 +7,11 @@
     python run_training.py split.mode=temporal
     python run_training.py mlflow.enabled=false
 
-The ``trainer`` config group selects the model family *and* its harness:
-each ``training_pipeline/configs/trainer/<name>.yaml`` declares
+The ``trainer`` config group selects the model family and its harness
+together: each ``training_pipeline/configs/trainer/<name>.yaml`` declares
 ``kind: sklearn|lightgbm|torch``, and the pipeline trains whatever the
-registry returns. Nothing in the orchestrator branches on family.
+registry returns. The protocol is expressed by the trainer's own methods;
+the orchestrator sequences them and never branches on the family.
 
 The log path returned by ``bootstrap`` is handed to the pipeline so the
 run can upload its own log file as the final MLflow artifact.
@@ -32,6 +33,7 @@ CONFIG_PATH = "src/PROJECT/pipelines/training_pipeline/configs"
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="training")
 def main(cfg: DictConfig) -> None:
+    """Validate the composed config and run the training pipeline."""
     config, log_path = bootstrap(cfg, TrainingConfig)
     TrainingPipeline(config, log_path=log_path).run()
 

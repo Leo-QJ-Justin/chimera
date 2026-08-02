@@ -1,3 +1,5 @@
+"""Logging setup: the programmatic and YAML paths, and their failure modes."""
+
 import logging
 
 from PROJECT.core.logging_setup import configure_logging

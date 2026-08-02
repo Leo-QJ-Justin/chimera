@@ -1,8 +1,8 @@
 """The ``BaseTrainer`` contract, asserted identically for every family.
 
-This is the acid test of R1.5: one parametrized suite, five trainers, no
-per-family branches. If a new trainer cannot pass this file unchanged, it
-does not satisfy the contract and the pipelines cannot use it.
+One parametrized suite runs against all five trainers with no per-family
+branches. If a new trainer cannot pass this file unchanged, it does not
+satisfy the contract and the pipelines cannot use it.
 
 Optional-extra families skip cleanly, which is also how the shipped
 skeleton behaves on a machine that installed only the sklearn dependencies.
@@ -56,8 +56,8 @@ OWN_ML_METHODS = (
     "save",
     "load",
     "log_model",
-    # The protocol trio (R1.13): how this family's data is shaped for the
-    # fit, what its run may claim, and what best.json then means.
+    # The protocol trio: how this family's data is shaped for the fit, what
+    # its run may claim, and what best.json then means.
     "fit_frames",
     "evaluate_run",
     "selection_key",
@@ -167,7 +167,7 @@ class TestContract:
             get_trainer_class(other).load(run_dir)
 
     def test_declares_its_own_fit_protocol(self, spec):
-        """``uses_val_in_fit`` must be stated by the family itself (R1.10).
+        """``uses_val_in_fit`` must be stated by the family itself.
 
         Checked in ``__dict__``, not by attribute lookup: inheriting the
         flag from a plumbing base would let a new family be handed a
@@ -251,7 +251,7 @@ def split_frames(synthetic_frame, features):
 
 @pytest.mark.parametrize("spec", TRAINER_SPECS)
 class TestProtocolMethods:
-    """The three methods that keep the orchestrator protocol-blind (R1.13).
+    """The three methods that keep the orchestrator protocol-blind.
 
     ``fit_frames`` shapes the run's data and ``selection_key`` says what
     ``best.json`` will mean - both without a fitted model, which is the
@@ -302,7 +302,7 @@ class TestProtocolMethods:
         A pooled family has no held-out split left to select on, so it
         answers ``cv_`` whatever ``selection.split`` says; a standing-val
         family honours the split until ``selection.basis: cv`` puts every
-        family on the one cross-comparable number (R1.11).
+        family on the one cross-comparable number.
         """
         trainer = _build(spec, features)
         pooled = not trainer.uses_val_in_fit
@@ -320,9 +320,9 @@ class TestProtocolMethods:
 class TestProcedureCrossValidation:
     """Every family cross-validates by running its own procedure per fold.
 
-    The acid test of R1.11: no family is excused (torch included), and the
-    numbers come back in one shape, which is what makes runs of different
-    families rankable against each other.
+    No family is excused, torch included, and the numbers come back in one
+    shape, which is what makes runs of different families rankable against
+    each other.
     """
 
     def test_cross_validate_reports_mean_std_and_per_fold_values(
@@ -367,7 +367,7 @@ class TestFoldStoppingSubsets:
 
     Reusing the run's standing val split would make every fold stop against
     the same rows; carving one out of the fold's training portion is what
-    keeps a fold score out-of-sample (R1.11).
+    keeps a fold score out-of-sample.
     """
 
     @needs_trainer("lightgbm")
@@ -385,8 +385,8 @@ class TestFoldStoppingSubsets:
             assert call["X_val"] is not None, "the fold fit got no stopping subset"
             fold_rows = len(call["X"]) + len(call["X_val"])
             assert len(call["X_val"]) / fold_rows == pytest.approx(0.15, abs=0.02)
-            # Disjoint from the rows fitted on - a referee inside the fit is
-            # not a referee.
+            # Disjoint from the rows fitted on: a stopping subset that the
+            # fit also trained on would not be held out.
             assert not set(call["X"].index) & set(call["X_val"].index)
             assert call["trainer"].best_iteration is not None
             assert call["trainer"].best_iteration < 399
@@ -395,7 +395,7 @@ class TestFoldStoppingSubsets:
     def test_a_temporal_fold_carves_its_chronological_tail(
         self, synthetic_frame, features, monkeypatch
     ):
-        """The stopping referee must never see the future (D9)."""
+        """The fold's stopping subset is its chronological tail, not a random slice."""
         calls = _spy_on_fold_fits(monkeypatch, "lightgbm")
         columns = [*features["numeric_features"], *features["categorical_features"]]
         frame = synthetic_frame.set_index("date").sort_index()
@@ -568,8 +568,8 @@ class TestConfigurableSpaces:
             assert call["X_val"] is not None, "the trial fit got no referee"
             rows = len(call["X"]) + len(call["X_val"])
             assert len(call["X_val"]) / rows == pytest.approx(0.2, abs=0.02)
-            # Disjoint from the rows fitted on - a referee inside the fit is
-            # not a referee.
+            # Disjoint from the rows fitted on: a stopping subset that the
+            # fit also trained on would not be held out.
             assert not set(call["X"].index) & set(call["X_val"].index)
 
     def test_an_error_metric_is_minimised_rather_than_maximised(self):

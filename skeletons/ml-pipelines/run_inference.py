@@ -9,8 +9,8 @@ files and its exact feature order, so this entry point is identical
 whether the run was trained by the sklearn, LightGBM or torch trainer.
 
 Scoring lives in ``run_evaluation.py``, which consumes this pipeline's
-output. That is the one-data-path rule (D4): predictions are produced
-here, once, by the code that serves them.
+output. Predictions are produced exactly once, by the inference pipeline;
+evaluation only joins and scores that file.
 """
 
 import sys
@@ -29,6 +29,7 @@ CONFIG_PATH = "src/PROJECT/pipelines/inference_pipeline/configs"
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH, config_name="inference")
 def main(cfg: DictConfig) -> None:
+    """Validate the composed config and run the inference pipeline."""
     config, log_path = bootstrap(cfg, InferenceConfig)
     InferencePipeline(config, log_path=log_path).run()
 

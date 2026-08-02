@@ -118,7 +118,7 @@ class TestRunSelection:
 
 
 class TestTrainerAgnosticLoading:
-    """Every family reloads through the same registry path (R1.5)."""
+    """Every family reloads through the same registry path."""
 
     @pytest.mark.parametrize("trainer", trainer_params())
     def test_any_trainers_run_serves(

@@ -1,38 +1,16 @@
 """``TorchTrainer``: the deep-learning harness behind the trainer contract.
 
-Everything that used to be a standalone DL training pipeline lives here as
-one trainer: the epoch loop, early stopping, the plateau scheduler, the
-NaN guard, checkpointing, device setup and the sanity check are all
-internals (``../modules/``), and the outside world sees only
+A whole deep-learning training pipeline lives here as one trainer: the
+epoch loop, early stopping, the plateau scheduler, the NaN guard,
+checkpointing, device setup and the sanity check are all internals
+(``../modules/``), and the outside world sees only
 ``train / predict / evaluate / save / load``.
 
-Decisions worth knowing before editing (D7):
-
-- **Same preprocessing as every other trainer**, and it is part of the
-  artifact - so a torch run accepts the same raw feature frame a LightGBM
-  run does, categoricals included.
-- **One monitored metric.** ``trainer.torch.monitor: {name, mode}`` drives
-  early stopping *and* the LR schedule, so no metric ever needs a
-  ``Const - error`` inversion to look higher-is-better.
-- **Best weights are restored after the loop**, so ``evaluate``, the
-  metrics in metadata and the logged MLflow model all describe the model
-  that will be served. ``checkpoint_last.pt`` keeps the raw final state for
-  resuming, and checkpoints are dicts, never pickled modules.
-- **Labels are encoded to 0..K-1 internally** and mapped back on predict:
-  ``CrossEntropyLoss`` needs contiguous class indices, the rest of the
-  project speaks the original labels.
-- **The tuner is this family's own**, as every family's is. What makes
-  torch's distinctive is not that it scores on a holdout - both boosters do
-  too - but that a suggestion has two possible destinations: ``params__*``
-  keys change the checkpoint's shapes, ``options__*`` keys change what the
-  loop does, and the winners are routed to both. ``cross_validate`` needs
-  no override - the base runs this trainer's own ``train`` per fold
-  (R1.11), which is expensive by construction and says so in the log
-  rather than hiding it.
-
-The architecture is the MLP in ``../modules/architectures.py``; another one
-is another trainer class overriding :meth:`_build_model`, not a lookup key
-inside this one.
+A torch run uses the same preprocessing as every other family and ships it
+inside the artifact, so it accepts the same raw feature frame a LightGBM
+run does, categoricals included. The architecture is the MLP in
+``../modules/architectures.py``; another one is another trainer class
+overriding :meth:`_build_model`, not a lookup key inside this one.
 """
 
 import copy
@@ -99,8 +77,8 @@ class TorchTrainer(BaseTrainer):
 
     kind = "torch"
     # The epoch loop monitors val every epoch (early stopping, LR schedule,
-    # best-checkpoint choice), so val must stay outside the training data:
-    # standing-val protocol (R1.10).
+    # best-checkpoint choice), so val must stay outside the training data: it
+    # is a standing referee, not part of the fit.
     uses_val_in_fit = True
 
     # Defaults for the search, prefixed by destination exactly as the
@@ -116,6 +94,8 @@ class TorchTrainer(BaseTrainer):
         "options__weight_decay": FloatSpace(low=1e-8, high=1e-2, log=True),
     }
 
+    # --------------------------------------------------------- construction
+
     def __init__(
         self,
         params: dict | None = None,
@@ -126,6 +106,7 @@ class TorchTrainer(BaseTrainer):
         classes: list | None = None,
         **kwargs,
     ):
+        """Build an unfitted trainer with its harness options and shapes."""
         super().__init__(params, **kwargs)
         self.options = TorchTrainerConfig(**(options or {}))
         self.input_dim = input_dim
@@ -146,8 +127,6 @@ class TorchTrainer(BaseTrainer):
             "n_outputs": self.n_outputs,
             "classes": self.classes,
         }
-
-    # ------------------------------------------------------- abstract hooks
 
     def _build_model(self):
         """A fresh ``nn.Module`` for the recorded shapes.
@@ -191,16 +170,16 @@ class TorchTrainer(BaseTrainer):
             ]
         return resolved
 
-    # ------------------------------------------------------------------ fit
+    # ----------------------------------------------------- fit & train loop
 
     def fit_frames(self, X: dict, y: dict) -> FitFrames:
         """The standing-val protocol: fit on train, val stays the referee.
 
         Val is handed back as the referee frames rather than pooled into the
-        fit, because the epoch loop reads it every epoch - early stopping,
+        fit, because the epoch loop reads it every epoch: early stopping,
         the LR schedule and the best-checkpoint choice all monitor it, and
-        rows inside the training data cannot referee any of that (R1.10).
-        Test is untouched either way.
+        rows inside the training data cannot referee any of that. Test is
+        untouched either way.
         """
         return FitFrames(X["train"], y["train"], X["val"], y["val"], ["train"])
 
@@ -281,7 +260,12 @@ class TorchTrainer(BaseTrainer):
         return self
 
     def _run_epochs(self, loaders, loss_fn, metric_fn, start_epoch: int) -> None:
-        """The loop: epoch -> evaluate -> schedule -> early-stop."""
+        """The loop: epoch -> evaluate -> schedule -> early-stop.
+
+        ``trainer.torch.monitor: {name, mode}`` drives early stopping and the
+        LR schedule from a single value, so no metric needs a
+        ``Const - error`` inversion to look higher-is-better.
+        """
         options = self.options
         monitor = options.monitor
         # EarlyStopping persists the best weights to a path; the run dir does
@@ -368,9 +352,11 @@ class TorchTrainer(BaseTrainer):
     def _restore_best(self, best_path: Path) -> None:
         """Serve the best-monitored weights, not whichever epoch was last.
 
-        The raw final state is snapshotted first so ``checkpoint_last.pt``
-        stays honest and ``resume: continue`` really continues from the last
-        epoch rather than silently from the best one.
+        ``evaluate``, the metrics in metadata and the logged MLflow model
+        then all describe the model that will be served. The raw final state
+        is snapshotted first, so ``checkpoint_last.pt`` keeps it and
+        ``resume: continue`` continues from the last epoch rather than from
+        the best one.
         """
         if not Path(best_path).exists():
             logger.warning("No best checkpoint written; keeping final weights")
@@ -384,7 +370,7 @@ class TorchTrainer(BaseTrainer):
         self._best_state = checkpoint["model_state_dict"]
         logger.info("Restored best-monitored weights into the served model")
 
-    # -------------------------------------------------------- score and tune
+    # ------------------------------------------------- evaluate & selection
 
     def evaluate(
         self, X: pd.DataFrame, y, metrics: list[str | Callable] | None = None
@@ -414,15 +400,31 @@ class TorchTrainer(BaseTrainer):
         every family.
 
         Under ``selection.basis: cv`` the fit above is untouched - this
-        family's epoch loop still needs its standing referee - but the
-        number ``best.json`` records becomes a procedure CV over the
-        train+val pool, where each fold carves its own referee (R1.11). That
-        is what a pooled family's ``cv_`` number already is, so the two rank
-        against each other. It costs ``cv`` full epoch loops, which the CV
-        log line says out loud rather than hiding. The std travels with the
-        mean because a selection criterion is a random variable: two runs
-        0.002 apart on a fold spread of 0.05 have not been distinguished
-        (Cawley & Talbot 2010).
+        family's epoch loop still needs its standing referee - but the number
+        ``best.json`` records becomes a procedure CV over the train+val pool.
+        Cross-validation reruns the family's whole training procedure per
+        fold - a fresh trainer, its own preprocessing, its own stopping
+        carve - so the estimate describes the procedure the run actually
+        ships, which is what a pooled family's ``cv_`` number already is and
+        what lets the two rank against each other. It costs ``cv`` full epoch
+        loops, which the CV log line states. The std travels with the mean
+        because a selection criterion is a random variable: two runs 0.002
+        apart on a fold spread of 0.05 have not been distinguished (Cawley &
+        Talbot 2010).
+
+        Args:
+            X: ``{"train"/"val"/"test": features}``, the realized split.
+            y: The matching targets, under the same keys.
+            X_fit: The frames the fit consumed. Unread here.
+            y_fit: The matching targets. Unread here.
+            metric: ``selection.metric``, a project metric alias.
+            cv: Fold count for the CV estimate under ``basis: cv``.
+            basis: ``selection.basis`` (``auto`` | ``cv``).
+            split: ``selection.split``, named in the line logged about it.
+
+        Returns:
+            The ``train_*``, ``val_*`` and ``test_*`` scores, plus
+            ``cv_<metric>`` and ``cv_<metric>_std`` under ``basis: cv``.
         """
         metrics: dict[str, float] = {}
         for name in ("train", "val", "test"):
@@ -463,7 +465,16 @@ class TorchTrainer(BaseTrainer):
         out-of-sample number and is honoured. ``selection.basis: cv`` trades
         it for the procedure-CV estimate every family can publish, which is
         what makes runs of different families rankable in one output
-        directory (R1.11).
+        directory.
+
+        Args:
+            metric: ``selection.metric``, a project metric alias.
+            basis: ``selection.basis`` (``auto`` | ``cv``).
+            split: ``selection.split``, the split whose score ranks the run.
+
+        Returns:
+            ``("cv", "cv_<metric>")`` under the CV basis, otherwise
+            ``(split, "<split>_<metric>")``.
         """
         if basis == "cv":
             return "cv", f"cv_{metric}"
@@ -478,6 +489,8 @@ class TorchTrainer(BaseTrainer):
         """
         return self._candidate({})
 
+    # -------------------------------------------------- hyperparameter_tune
+
     def hyperparameter_tune(
         self,
         X: pd.DataFrame,
@@ -491,20 +504,24 @@ class TorchTrainer(BaseTrainer):
     ) -> dict:
         """Optuna over one carved holdout, which every trial early-stops on.
 
-        ``cv`` is **not read here**: k-fold would multiply an already
-        expensive fit by ``cv``, and the epoch loop needs a standing referee
-        anyway. It still sets the fold count of the selection CV under
+        ``cv`` is not read here: k-fold would multiply an already expensive
+        fit by ``cv``, and the epoch loop needs a standing referee anyway. It
+        still sets the fold count of the selection CV under
         ``selection.basis: cv``.
+
+        A suggestion has two destinations - ``params__*`` keys change the
+        checkpoint's shapes, ``options__*`` keys change what the loop does -
+        and the winning trial's values are routed to both.
 
         The holdout is carved by
         :meth:`BaseTrainer._carve_stopping_subset`, so a temporal run's
         trials stop against the chronological tail rather than a random
-        subset - a monitor that has seen the future is the leak D9 exists to
-        prevent.
+        subset: nothing about a fit, its early-stopping monitor included,
+        may see rows later than the point it is evaluated at.
 
         Known bias: trials are scored on the same holdout they early-stopped
-        against, so the selected score is optimistic. The honest number
-        remains the training pipeline's untouched test split.
+        against, so the selected score is optimistic. The out-of-sample
+        number remains the training pipeline's untouched test split.
 
         Args:
             n_trials: Optuna trials; each costs one full epoch loop.
@@ -548,12 +565,12 @@ class TorchTrainer(BaseTrainer):
             candidate.train(X_tune, y_tune, X_holdout, y_holdout)
             return candidate.evaluate(X_holdout, y_holdout, metrics=[metric])[metric]
 
-        # An unseeded sampler makes the search trajectory unreplayable even
-        # when the seed, the data and the space are all pinned.
+        # Seed the sampler: without it the search trajectory is unreplayable
+        # even when the seed, the data and the space are all pinned.
         optuna_kwargs.setdefault("sampler", optuna.samplers.TPESampler(seed=self.seed))
         study = optuna.create_study(direction=direction, **optuna_kwargs)
-        # show_progress_bar is off: the bar writes to stderr and interleaves
-        # with the run's log file, which is the thing anyone reads afterwards.
+        # show_progress_bar is off: it writes to stderr and interleaves with
+        # the run's structured log lines.
         study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
 
         self.best_params = dict(study.best_trial.user_attrs["resolved_params"])
@@ -602,15 +619,17 @@ class TorchTrainer(BaseTrainer):
 
         return taking("params__"), taking("options__")
 
-    # -------------------------------------------------------------- predict
+    # ------------------------------------------ predict & inference helpers
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Class labels (or regression values) from the served module."""
         outputs = self._raw_outputs(X)
         if not self._is_classification:
             return outputs.reshape(-1)
         return np.asarray(self.classes)[outputs.argmax(axis=1)]
 
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray | None:
+        """Softmax probabilities from the served module; None for regression."""
         if not self._is_classification:
             return None
         import torch
@@ -620,6 +639,7 @@ class TorchTrainer(BaseTrainer):
 
     @property
     def classes_(self) -> np.ndarray | None:
+        """Class labels in the order :meth:`predict_proba` returns them."""
         return None if self.classes is None else np.asarray(self.classes)
 
     def _raw_outputs(self, X: pd.DataFrame) -> np.ndarray:
@@ -645,12 +665,14 @@ class TorchTrainer(BaseTrainer):
         """The float32 matrix the module actually consumes."""
         return self._to_array(self.preprocessor.transform(self.align(X)))
 
-    # ----------------------------------------------------------- persistence
+    # ---------------------------------------------------------- persistence
 
     def training_summary(self) -> dict:
+        """The epoch-loop summary and full history, for ``metadata.json``."""
         return {**self.summary, "history": self.history}
 
     def get_params(self) -> dict:
+        """Tracker params, plus the harness options and the module's size."""
         params = super().get_params()
         params.update({f"torch_{k}": v for k, v in self.options.model_dump().items()})
         params["input_dim"] = self.input_dim
@@ -682,6 +704,11 @@ class TorchTrainer(BaseTrainer):
         )
 
     def save(self, run_dir: str | Path) -> dict[str, str]:
+        """Write the module state dicts and the joblib preprocessor.
+
+        Checkpoints are plain dicts, never pickled modules, so they survive a
+        rename of the class that produced them.
+        """
         import torch
 
         self.check_fitted()
@@ -709,6 +736,7 @@ class TorchTrainer(BaseTrainer):
 
     @classmethod
     def load(cls, run_dir: str | Path) -> "TorchTrainer":
+        """Rebuild a fitted trainer from a run directory's module state dict."""
         run_dir = Path(run_dir)
         trainer = cls.from_spec(cls.read_spec(run_dir))
         files = cls.read_files(run_dir)
@@ -721,7 +749,7 @@ class TorchTrainer(BaseTrainer):
         trainer.fitted = True
         return trainer
 
-    # --------------------------------------------------------------- parts
+    # ----------------------------------------------------- internal helpers
 
     @property
     def _is_classification(self) -> bool:
@@ -739,7 +767,11 @@ class TorchTrainer(BaseTrainer):
         return lambda outputs, targets: mse(outputs.squeeze(-1), targets)
 
     def _encode_targets(self, y, fit: bool) -> np.ndarray:
-        """Original labels -> contiguous class indices (classification only)."""
+        """Original labels -> contiguous class indices (classification only).
+
+        ``CrossEntropyLoss`` needs contiguous indices; the rest of the project
+        speaks the original labels, which :meth:`predict` maps back to.
+        """
         y = np.asarray(y)
         if not self._is_classification:
             if fit:

@@ -1,8 +1,8 @@
 """Shared fixtures.
 
-Test constants come from **schema defaults**, never from the YAML in
-``configs/``: those files are the analyst's to change, and a test that
-reads them fails for the wrong reason the first time someone tunes a knob.
+Test constants come from schema defaults, never from the YAML in
+``configs/``: those files are meant to be edited per project, so a test that
+read them would fail as soon as a knob was tuned.
 
 Every config fixture sets ``mlflow.enabled=false`` - declaratively, the
 same switch production uses, not by monkeypatching - so the suite is
@@ -111,8 +111,8 @@ def needs_trainer(kind: str):
 def trainer_params():
     """One ``pytest.param`` per shipped family, each skipping cleanly.
 
-    Parametrizing over this is what keeps the contract suite honest: a new
-    family is one entry in ``ALL_TRAINERS`` and no new test.
+    Parametrizing over this keeps the contract suite complete: a new family
+    is one entry in ``ALL_TRAINERS`` and no new test.
     """
     return [
         pytest.param(spec, id=kind, marks=needs_trainer(kind))

@@ -1,9 +1,9 @@
 """Split reproducibility: persist membership, not just the recipe.
 
-Seed + protocol is the *generator* of a split; the artifact written here
-is the *record*. Membership is stored as stable row keys (entity id,
-timestamp, or a durable sample id), never positional indices - positional
-indices break silently when the model-input table is regenerated.
+Seed and protocol are the generator of a split; the artifact written here
+is the record. Split membership is recorded by stable row key - an entity
+id, a timestamp, or a durable sample id - never positional index, so a
+regenerated table cannot silently shift the splits.
 
 The fingerprint (sha256 of the sorted membership) is logged as a run
 param so split-identity across runs is checkable at a glance.
@@ -83,6 +83,17 @@ def save_splits(
 
 
 def load_splits(run_dir: str | Path) -> dict:
+    """Read a run's recorded split membership.
+
+    Args:
+        run_dir: Directory of the run that recorded the splits.
+
+    Returns:
+        The payload written by :func:`save_splits`.
+
+    Raises:
+        FileNotFoundError: If the run recorded no splits.
+    """
     path = Path(run_dir) / SPLITS_FILENAME
     if not path.exists():
         raise FileNotFoundError(f"No {SPLITS_FILENAME} in {run_dir}")
@@ -90,7 +101,15 @@ def load_splits(run_dir: str | Path) -> dict:
 
 
 def apply_splits(df: pd.DataFrame, splits_payload: dict) -> dict[str, pd.DataFrame]:
-    """Reproduce a recorded split exactly on a (regenerated) model-input table.
+    """Reproduce a recorded split exactly on a model-input table.
+
+    Args:
+        df: Model-input table, possibly regenerated since the split was
+            recorded.
+        splits_payload: Payload from :func:`load_splits`.
+
+    Returns:
+        One frame per split name, holding that split's recorded rows.
 
     Raises:
         ValueError: If any recorded member is absent from the frame - the
@@ -117,17 +136,16 @@ def load_split_frames(
 ) -> tuple[dict[str, pd.DataFrame], dict[str, pd.Series]]:
     """Hand back exactly the frames a recorded run trained on.
 
-    The documented answer to "give me what run X trained on". Nothing is
-    stored to make it work: the run recorded split membership by stable key
-    and the content hash of the table those keys point into, so the frames
-    are *re-derived* - same rows, same feature order, same target - and both
-    halves of that record are verified before anything comes back.
+    Nothing is stored to make this work. The run recorded split membership
+    by stable key and the content hash of the table those keys point into,
+    so the frames are re-derived with the same rows, the same feature order
+    and the same target. Both halves of that record are verified before
+    anything is returned.
 
-    Every set derived downstream of the split replays from these frames via
-    the seeds in the run's ``config.yaml``: the train+val pool a pooled
-    family fits on, the holdout a standing-val search carves, the CV folds.
-    Those are recipes, and recipes reproduce; this function supplies the
-    roots they run on.
+    Every set derived downstream of the split replays from these frames
+    using the seeds in the run's ``config.yaml``: the train+val pool a
+    pooled family fits on, the holdout a standing-val search carves, the CV
+    folds. This function supplies the frames those derivations start from.
 
     Args:
         run_dir: A training run directory (``metadata.json`` + ``splits.json``).

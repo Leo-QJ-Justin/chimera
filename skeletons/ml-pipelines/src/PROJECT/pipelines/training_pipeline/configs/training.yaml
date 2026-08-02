@@ -2,8 +2,7 @@
 #
 # `trainer` is a config group in ./trainer/: one file per model family,
 # carrying that family's own params and harness knobs. Switch families with
-# `python run_training.py trainer=mlp` - the orchestrator never learns which
-# one it got.
+# `python run_training.py trainer=mlp`.
 defaults:
   - shared/base
   - trainer: random_forest
@@ -38,7 +37,9 @@ categorical_features: []
 
 split:
   # shuffle | stratified | temporal  (group: not implemented, see modules/splitting.py)
-  # This also picks the cross-validation splitter used by tuning (D9).
+  # Also picks the cross-validation splitter used by tuning: under temporal
+  # mode folds are chronological, so no fit - including its early-stopping
+  # monitor - sees rows later than the point it is evaluated at.
   mode: stratified
   train_size: 0.7
   val_size: 0.15
@@ -54,42 +55,23 @@ split:
   #   +split.boundaries.val_start=2024-01-01 +split.boundaries.test_start=2024-06-01
 
 selection:
-  # Drives best.json. Validation - not test - decides which run is "best";
-  # test stays a reporting number.
-  #
-  # `split` applies to families whose fit consumes val (lightgbm, xgboost,
-  # torch: their early stopping needs it as a standing referee). Families
-  # that ignore val during the fit (logreg, random_forest) instead pool
-  # train+val, fit on the pool, and select on a k-fold CV estimate over it -
-  # so `split` is ignored for them (with a log line) and best.json records
-  # `cv_<metric>`. See R1.10 in the design spec; the flag is each trainer
-  # class's own `uses_val_in_fit`.
+  # Drives best.json; validation, never test, decides which run is "best".
+  # `split` applies only to families whose fit consumes val; a family that
+  # ignores val pools train+val and records `cv_<metric>` instead, so `split`
+  # is ignored for it (with a log line). See README: Two protocols.
   metric: f1_macro
   mode: max
   split: val
-  # auto | cv  - which number best.json records (R1.11).
-  #
-  # `auto` is the per-family behaviour described above, and the two kinds of
-  # number deliberately do not rank against each other: a run that changes
-  # protocol inside one output_dir logs a warning and leaves best.json alone.
-  #
-  # `cv` puts every family on one yardstick: a k-fold estimate over train+val
-  # in which each fold runs the family's *entire* training procedure (a
-  # standing-val family's folds carve their own early-stopping subset, the
-  # chronological tail under temporal mode). Set it on every candidate, point
-  # them at one output_dir, and best.json ranks the families - without anyone
-  # reading test. It costs `trainer.tune.cv` extra fits per run, and the fit
-  # the run ships is unchanged (a standing-val family still trains on train
-  # with val as its referee, and still publishes train_/val_/test_ metrics).
+  # auto | cv - which number best.json records. `auto` is the per-family
+  # behaviour above, and the two kinds of number do not rank against each
+  # other. `cv` puts every family on one k-fold yardstick over train+val so
+  # they rank in one output_dir, at `trainer.tune.cv` extra fits per run.
   basis: auto
 
-# Post-fit figures drawn from the fitted model itself, into
-# <run_dir>/plots/ (and therefore into MLflow, via the run-dir upload).
-# Curves come from whatever per-iteration history the family recorded -
-# every epoch for torch, every boosting round for lightgbm/xgboost, none
-# for a one-shot sklearn fit; importances/coefficients come from the
-# fitted estimator. Prediction-based figures (confusion matrix, ROC,
-# calibration, residuals) belong to the evaluation pipeline instead.
+# Post-fit figures drawn from the fitted model itself, into <run_dir>/plots/
+# (and therefore into MLflow, via the run-dir upload). Curves come from the
+# per-iteration history the family recorded, importances from the fitted
+# estimator. Prediction-based figures belong to the evaluation pipeline.
 diagnostics:
   enabled: true
   shap:
@@ -97,7 +79,7 @@ diagnostics:
     # line and is skipped. Torch runs are skipped either way - gradient
     # attributions for a neural net are a different tool.
     enabled: true
-    # Validation rows to explain. Exact explainers are superlinear in rows
-    # and the beeswarm of 200 says what the beeswarm of 20,000 says.
+    # Validation rows to explain. Exact explainers are superlinear in rows,
+    # and a larger sample does not change what the beeswarm shows.
     sample_size: 200
     max_display: 20
