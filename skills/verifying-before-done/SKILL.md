@@ -47,7 +47,7 @@ Skip any step = lying, not verifying
 | Bug fixed | Test original symptom: passes | Code changed, assumed fixed |
 | Regression test works | Red-green cycle verified | Test passes once |
 | Agent completed | VCS diff shows changes | Agent reports "success" |
-| Requirements met | Line-by-line checklist | Tests passing |
+| Requirements met | Line-by-line checklist, from the realized `FR-N` *Done when* lines when a PRD exists | Tests passing |
 | "The analysis shows X" | Clean rerun reproduces the numbers | Numbers remembered from an earlier run |
 
 ## Exploration Mode
@@ -116,6 +116,9 @@ X" or recording a number in the findings doc as final:
 ✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
 ❌ "Tests pass, phase complete"
 ```
+Where `docs/prd.md` exists, build the checklist from the *Done when* lines
+of the FRs the spec realizes — they were written to be testable. Without a
+PRD, re-read the plan as above.
 
 **Agent delegation:**
 ```

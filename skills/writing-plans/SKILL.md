@@ -42,7 +42,9 @@ cycle; steps follow RED → verify → GREEN → verify → commit
 1. Data prep (snapshot to pin, with how it will be fingerprinted)
 2. Baseline (the dumb thing to beat; from `docs/prd.md` if present)
 3. Experiments, in order, each with: what varies, what's measured
-4. Evaluation metric (inherited from the PRD when it exists)
+4. Evaluation metric, plus the guard metric it must not be bought at the
+   expense of (both inherited from the brief, which takes them from the
+   PRD when it exists)
 5. **Stopping rule (mandatory):** "if <metric> improves less than <X> after
    <N> experiments, conclude no-signal and stop."
 

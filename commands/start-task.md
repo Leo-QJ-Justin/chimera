@@ -77,4 +77,8 @@ output. Exploration: clean rerun reproduces the findings numbers.
 
 Invoke chimera:finishing-a-branch (its Step 0 runs the one review pass).
 After integration: if `docs/roadmap.md` exists, update this task's row
-status and add any newly-created rows (e.g., a promotion task).
+status and add any newly-created rows (e.g., a promotion task). If the
+task renegotiated a requirement it realized, amend `docs/prd.md` in the
+same commit — an `FR-N` that no longer matches shipped behavior is a
+stale label. Genesis-level changes (a new module boundary, a new requirement)
+stay `/design-project` work.

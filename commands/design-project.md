@@ -38,6 +38,17 @@ recommendation where useful. Then fill the type-matched PRD template into
   1-2: business understanding, data understanding, constraints)
 - Hybrid → both templates' sections, merged (product shell + ML core)
 
+**Self-check before presenting** — fix inline, no re-review:
+
+1. **Substance** — cut any section that drives no decision.
+2. **Done-ness** — every FR carries at least one testable *Done when*;
+   no unmeasurable adjective survives ("gracefully", "reasonable",
+   "user-friendly").
+3. **Scope honesty** — every inference tagged `[ASSUMPTION]` and listed
+   in the index; every omission stated in Non-goals rather than left for
+   the reader to infer.
+4. **ID integrity** — FR IDs unique and contiguous.
+
 **Approval gate:** your human partner approves `docs/prd.md` before
 Phase 2.
 
@@ -68,16 +79,23 @@ Derive `docs/roadmap.md`:
 ```markdown
 # Roadmap
 
-| # | Task | Mode | Depends on | Status |
-|---|------|------|------------|--------|
-| 1 | <task> | build/exploration | - | pending |
+| # | Task | Mode | Realizes | Depends on | Status |
+|---|------|------|----------|------------|--------|
+| 1 | <task> | build | FR-1, FR-3 | - | pending |
 ```
+
+`Realizes` carries the PRD requirement IDs the row delivers, so a task
+inherits its acceptance criteria instead of restating them. Rows that
+realize no requirement — spikes, infrastructure, every exploration row —
+carry `-`; an exploration task answers a question rather than delivering
+a capability, and citing an FR there is false precision.
 
 - Application: rows from system-design modules in dependency order.
 - ML/data: compile CRISP-DM phases 3-6 — data preparation → build rows;
   modeling → exploration rows (stopping rules will come from the PRD
   metrics); evaluation → inside the exploration rows; deployment → build
-  rows via the promotion rule.
+  rows via the promotion rule. Modeling rows inherit both the ML metric
+  and the guard metric as their stopping-rule inputs.
 
 **The roadmap is a queue, not a plan**: rows carry no specs or task
 breakdowns — each row later gets its own `/start-task` run with full

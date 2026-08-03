@@ -31,7 +31,9 @@ You MUST create a todo for each item and complete them in order:
 
 1. **Explore context** — the task's spec source (roadmap row, request),
    relevant files, docs, recent commits. If `docs/system-design.md` exists,
-   read it: which module(s) does this task touch?
+   read it: which module(s) does this task touch? If `docs/prd.md` exists
+   and the roadmap row's `Realizes` column names requirement IDs
+   (`FR-N`), read those requirements.
 2. **Determine mode** — confirm build | exploration (set at /start-task);
    it decides what Step 4 produces.
 3. **Ask clarifying questions** — one at a time, one per message; prefer
@@ -52,7 +54,11 @@ You MUST create a todo for each item and complete them in order:
 ## Mode Fork (what Step 4-6 produce)
 
 **Build mode — task spec:**
-- Behavior: what it does, observable outcomes, edge cases
+- Behavior: what it does, observable outcomes, edge cases. Where the row
+  names requirements, say which `FR-N` the spec realizes: their *Done
+  when* lines are the acceptance criteria, to be satisfied or explicitly
+  renegotiated, never quietly dropped. Without a PRD, state behavior
+  directly as before.
 - Interfaces: exact inputs/outputs; if `docs/system-design.md` exists, name
   the module(s) touched and write against their I/O contracts — never
   re-litigate the architecture inside a task
@@ -63,8 +69,9 @@ You MUST create a todo for each item and complete them in order:
 - Question: what are we trying to learn?
 - Hypothesis: what do we expect and why?
 - Data: which sources, which snapshot will be pinned
-- Method: how we'll test the hypothesis; evaluation metric (inherit from
-  `docs/prd.md` if present)
+- Method: how we'll test the hypothesis; evaluation metric and guard
+  metric (inherit both from `docs/prd.md` if present). A brief cites no
+  FRs — exploration answers a question, it does not deliver a capability
 - **Decision line (mandatory): "What result would change what decision?"**
   A brief without this line is incomplete — it is the single guard between
   research and wandering.
