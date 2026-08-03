@@ -39,6 +39,23 @@ Copy `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.project.md` and fill:
 - **Architecture**: link `docs/prd.md`, `docs/system-design.md`,
   `docs/roadmap.md`, `docs/adr/` — only the ones that exist.
 
+## Phase 3b — RULES
+
+Copy the rules pack into the project — entire directories, never
+flattened (`common/` and `python/` share filenames):
+
+```bash
+mkdir -p .claude/rules
+cp -r "${CLAUDE_PLUGIN_ROOT}/rules" .claude/rules/chimera
+```
+
+If `.claude/rules/chimera/` already exists: show a diff of the differing
+files and **never overwrite without approval**.
+
+The filled CLAUDE.md imports what was copied. Keep the
+`python/coding-style.md` import only for Python projects — the
+`pyproject.toml` probe from Phase 3 decides; delete that line otherwise.
+
 ## Phase 4 — DOCS SKELETON
 
 ```bash

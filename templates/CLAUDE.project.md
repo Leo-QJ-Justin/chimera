@@ -17,6 +17,11 @@ Default: {{build | exploration}}  (tasks may override at /start-task)
 [ADRs](docs/adr/)}}
 
 ## Conventions
+Coding rules (auto-loaded):
+@.claude/rules/chimera/common/coding-style.md
+@.claude/rules/chimera/common/documentation.md
+@.claude/rules/chimera/python/coding-style.md {{delete if not a Python project}}
+
 - Feature work and multi-file changes happen on branches - enter via
   /start-task, never directly on main.
 {{3-5 more that differ from defaults; delete if none}}

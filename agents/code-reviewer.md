@@ -29,7 +29,8 @@ selects your rubric below.
 
 - **Report** only if you are >80% confident it is a real issue.
 - **Skip** stylistic preferences unless they violate project conventions
-  (check the project CLAUDE.md).
+  (check the project CLAUDE.md and `.claude/rules/`) — a rules violation
+  is a reportable finding, not a skipped style nit.
 - **Skip** issues in unchanged code unless CRITICAL security.
 - **Consolidate** similar issues ("5 functions missing error handling", not
   5 findings).

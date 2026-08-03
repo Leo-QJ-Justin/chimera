@@ -56,6 +56,27 @@ acceptance criteria. Spike code is never merged.
   `CHIMERA_SILENCE_NUDGE=1` to mute)
 - **5 templates** — `CLAUDE.user.md`, `CLAUDE.project.md`, `prd-app.md`,
   `prd-ml.md`, `system-design.md`
+- **1 rules pack** — `rules/common/` + `rules/python/`, copied into each
+  project by `/new-project` (see [Rules](#rules))
+
+## Rules
+
+`rules/` holds explicit coding rules in ECC's format — short imperative
+files that state WHAT to do, where skills state HOW. `common/` is
+language-agnostic; `python/` extends it with `paths:` frontmatter.
+
+They travel by copy, not by plugin load, so other harnesses and a plain
+`git clone` see the same files. `/new-project` copies them to
+`.claude/rules/chimera/` and imports them from the project CLAUDE.md. For
+an existing project:
+
+```bash
+mkdir -p .claude/rules
+cp -r "${CLAUDE_PLUGIN_ROOT}/rules" .claude/rules/chimera
+```
+
+Copy whole directories — `common/` and `python/` share filenames, so a
+flattened copy loses one.
 
 ## Install
 
@@ -91,7 +112,8 @@ end-to-end matrix.
   observed failing test; exceeds what either reference enforces)
 - **v1.x** — `/learn` retro command (manual, quality-gated, modeled on
   ECC's `/learn-eval`)
-- **v2** — language rules packs (Python first)
+- **v2** — language rules packs: `common/` + `python/` shipped; further
+  languages when a project needs one
 
 ## License
 

@@ -31,6 +31,9 @@ GitHub repo  →  marketplace mirror  →  install cache  →  live session
    `plugin.json`, and a fresh session's context contains the
    `CHIMERA_BOOTSTRAP` block (visible via the SessionStart hook output).
 
+Copied rules do not follow the plugin: after an update, re-copy or diff
+each project's `.claude/rules/chimera/` against `<plugin>/rules/`.
+
 ## Local development installs
 
 For testing unreleased changes, add the local repo as a marketplace:
