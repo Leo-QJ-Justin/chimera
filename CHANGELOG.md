@@ -4,6 +4,39 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.6.0] - 2026-08-03
+
+### Added
+- Requirements in the PRD templates: globally numbered `FR-N` blocks,
+  each carrying at least one testable `Done when` line. They are the
+  first thing in the genesis chain a task can be verified against —
+  previously a requirement was restated in new words at every hop from
+  PRD prose to verification checklist.
+- Inline `[ASSUMPTION: ...]` tags with an index in both PRD templates, a
+  guard metric beside every success measure, and an open-questions
+  section at PRD altitude.
+- `templates/prd-ml.md` gains a Prediction target section (unit of
+  analysis, label definition, prediction window, exclusions, known
+  prevalence) and states that the promotion threshold is set by the first
+  exploration task, not at genesis — model quality never becomes an FR.
+- Four-point PRD self-check (substance, done-ness, scope honesty, ID
+  integrity) before `/design-project`'s Phase 1 approval gate, matching
+  the self-review steps `designing-tasks` and `writing-plans` carry.
+- `docs/research/2026-08-03-prd-trawl-bmad.md` — trawl of BMAD-METHOD
+  (BMad Code, LLC, MIT), whose PRD template chimera's was originally
+  modelled on, with adopt/reject verdicts per device.
+
+### Changed
+- `docs/roadmap.md` tables gain a `Realizes` column carrying the
+  requirement IDs a row delivers. Task specs name the `FR-N` they realize
+  and inherit its `Done when` lines as acceptance criteria;
+  `verifying-before-done` builds its requirements checklist from those
+  lines; `/start-task` Phase 6 amends the PRD when a task renegotiated a
+  requirement. Every touchpoint is conditional on `docs/prd.md` existing,
+  so loop runs in repos without genesis docs are unaffected, and
+  exploration rows realize no requirements — they inherit the metric,
+  baseline, and guard metric instead.
+
 ## [1.5.0] - 2026-08-03
 
 ### Added

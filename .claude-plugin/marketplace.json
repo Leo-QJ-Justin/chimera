@@ -9,7 +9,7 @@
       "name": "chimera",
       "source": "./",
       "description": "Self-contained personal harness: mode-aware (build|exploration) development loop with project-genesis and scaffolding commands.",
-      "version": "1.5.0"
+      "version": "1.6.0"
     }
   ]
 }
