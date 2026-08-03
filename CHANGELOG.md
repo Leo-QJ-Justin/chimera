@@ -4,6 +4,42 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.5.0] - 2026-08-03
+
+### Added
+- Zero-storage provenance in the ML Pipelines scaffold: chunked-sha256
+  content fingerprint of the processed table recorded per run and checked
+  at evaluation, `load_split_frames` replay of any run's exact split
+  frames from roots and recipes, seeded Optuna samplers in every family
+  tuner, and an `environment.json` package record per run.
+- Scaffold technical documentation: `docs/pipelines.md` (per-pipeline
+  reference) and `docs/extending.md` (nine recipes covering where a new
+  metric, plot, trainer family, or pipeline stage goes).
+- Coding-style rules pack (`rules/common/`, `rules/python/`), distributed
+  by copy into `.claude/rules/chimera/` via `/new-project` and auto-loaded
+  through CLAUDE.md imports; the code-reviewer agent treats rules
+  violations as reportable findings. Chimera's own root CLAUDE.md imports
+  the pack it ships.
+- Per-topic EDA playbooks in `skills/exploring-reproducibly/`: a generic
+  spine and a statistical-test appendix shared by four topic playbooks
+  (tabular, time series, text, images), wired into `SKILL.md` alongside
+  `analysis-style.md`. Externally sourced techniques carry an
+  `[external]` marker until exercised in a shipped analysis; count and
+  geospatial playbooks remain deferred pending reference material.
+- EDA trawl research corpus under `docs/research/` (four documents:
+  stated practice, practiced technique across four coursework branches,
+  external curriculum cross-check, and the topic coverage map with
+  recorded scope decisions).
+
+### Changed
+- Scaffold docstrings and comments rewritten in a professional library
+  voice: Google-style docstrings throughout, no design-doc or planning
+  references, comments state reasons at decision points. Verified
+  comment-only via docstring-stripped AST equivalence.
+- Scaffold abstraction cleanup: single environment record, shared
+  `read_table` reader, trainer-registry if-chain inlined, dead code
+  removed. Scaffold test count: 319.
+
 ## [1.4.0] - 2026-08-01
 
 ### Added
