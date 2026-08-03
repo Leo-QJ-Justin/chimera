@@ -74,6 +74,12 @@ with the reason recorded. This is the guard against endless fishing.
 - Prose, observation cells, and chart style follow the contract in
   [analysis-style.md](analysis-style.md). Load it when writing any
   analysis prose.
+- EDA technique follows the playbooks. Load
+  [playbook-generic.md](playbook-generic.md) and
+  [playbook-stat-tests.md](playbook-stat-tests.md) for any EDA work,
+  plus the one matching the data at hand:
+  [tabular](playbook-tabular.md), [time-series](playbook-time-series.md),
+  [text](playbook-text.md), [images](playbook-images.md).
 - Notebooks live in `notebooks/`, named `NN-topic.ipynb` (ordered).
 - Structure: objective cell (from the brief) → data loading (pinned
   snapshot stated) → analysis → findings-summary cell mirroring the
