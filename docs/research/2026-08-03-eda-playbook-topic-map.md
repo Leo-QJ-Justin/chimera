@@ -124,5 +124,28 @@ corroborated by at least two independent observations in the corpus:
    self-marked "safe to delete", and one broken stub. Fix in the vault
    independently of this task, or ignore?
 
-Decisions recorded here with role and date once made; drafting begins
-only after questions 1-2 are answered.
+## 5. Decisions (maintainer, 2026-08-03)
+
+1. **Topic list: the draft-ready four only** — tabular, time-series,
+   text/NLP, images. Count waits with geospatial until more
+   count-specific material accumulates; both remain deferred, not
+   dropped. Images is added to the list on evidence strength.
+2. **Form and home: per-topic + shared base** —
+   `skills/exploring-reproducibly/playbook-<topic>.md`, one file per
+   topic, loaded conditionally the way `analysis-style.md` already is,
+   plus `playbook-generic.md` holding the 5-stage spine, 8-step
+   cleaning workflow, and first-pass ritual that per-topic files
+   reference instead of repeating.
+3. **Statistical-test decision tree: shared appendix** —
+   `playbook-stat-tests.md` with the vault's decision tree and the
+   Shapiro-Wilk/Levene gating checks, referenced from each playbook.
+4. **External candidates: adopt with attribution** — the eight
+   accepted-class curriculum candidates enter the playbooks, each
+   clearly marked as external practice not yet exercised in the
+   maintainer's own projects. SMOTE and missing-value indicators stay
+   out per the stronger prior in-house evidence.
+
+Drafting proceeds as a separate build task against these decisions:
+six files under `skills/exploring-reproducibly/` (four topic playbooks,
+the generic base, the stat-test appendix), wired into `SKILL.md`'s
+conditional-load list.
