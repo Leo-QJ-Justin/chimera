@@ -4,6 +4,52 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.7.0] - 2026-08-09
+
+Seven amendments distilled from a field run of 1.6.0 — a `/design-project`
+pass over an existing document corpus. Provenance and the one deviation
+that was declined:
+`docs/research/2026-08-09-genesis-amendments-from-field-use.md`.
+
+### Added
+- `writing-in-ste` skill — Simplified Technical English as the register
+  for genesis documents and any text an agent must parse without a human
+  to resolve ambiguity. Ported (not referenced) from
+  `danyuchn/asd-ste100-skill`, MIT, which repurposes ASD-STE100 Issue 9;
+  the standard's approved-word dictionary is not reproduced. Wired into
+  the `using-chimera` routing table and every `/design-project` phase
+  gate, with the rewrite pass running before approval, never after.
+- `## Terms` table in both PRD templates — one row per term that is not
+  common English, one meaning each. This reverses the Glossary rejection
+  recorded in the BMAD trawl: STE's one-word-one-meaning rule needs an
+  anchor, and without one domain nouns drifted between documents in the
+  field run.
+- `### Issue schedule` in `templates/prd-ml.md` — the eight properties
+  that specify a forecast (issue frequency, issue time, as-of cutoff,
+  target set, resolution, lead-time range, output shape, re-issue
+  policy), the fixed-event-versus-rolling shape, and a worked example
+  with concrete timestamps. The as-of cutoff is the leakage contract; a
+  system that leaves it unstated cannot be audited for leakage.
+- **Distill mode** for `/design-project` — offered at Phase 0 when an
+  authoritative corpus already exists. Distilled PRDs open with a
+  precedence header naming the source documents in order. Approval gates
+  are unchanged: distillation changes the input, not the discipline.
+- **Gate rows** in the roadmap — exploration rows realizing `-`, whose
+  deliverable is a written go/no-go note, placed after the rows they
+  gate, under the header rule "a slipped gate beats a false-green gate".
+  Plus critical-path and parallel-rows footer notes.
+
+### Changed
+- ADRs carry three more fields: a status vocabulary that keeps live
+  disagreement visible (`proposed`, `accepted, under challenge`), a tier
+  label tied to reversal cost that doubles as the build-order argument,
+  and a reversal-cost line in Consequences. Small reversible technology
+  choices consolidate into one table ADR; deliberate shortcuts go in a
+  debt-register ADR with expiry dates reviewed at each gate row.
+- `templates/system-design.md` data flow is a mermaid `flowchart`
+  (schedules a `gantt`); ASCII arrows are kept only for a single linear
+  chain, and repo layout stays a text tree.
+
 ## [1.6.0] - 2026-08-03
 
 ### Added

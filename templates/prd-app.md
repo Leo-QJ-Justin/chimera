@@ -1,5 +1,16 @@
 # {{PROJECT_NAME}} — PRD
 
+> Written in Simplified Technical English (ASD-STE100 register): short
+> sentences, active voice, simple tenses, one meaning per term.
+
+## Terms
+{{One row per term that is not common English. One meaning each — the
+document uses the term this way everywhere. Delete the section if empty.}}
+
+| Term | Meaning |
+|---|---|
+| {{term}} | {{one sentence, no synonyms}} |
+
 ## Problem statement
 {{What hurts, for whom, today? Concrete, observable pain — not a solution
 in disguise.}}

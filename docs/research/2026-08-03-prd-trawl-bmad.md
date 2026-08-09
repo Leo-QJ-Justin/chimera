@@ -76,7 +76,7 @@ execute → verify).
 | Length scales with stakes | **reject** | Considered and dropped: the maintainer's standing preference is the same meticulousness everywhere. Templates stay one-size at full rigor |
 | Validation rubric, seven dimensions | **adopt in part** — four-point self-check | Substance, done-ness, scope honesty, ID integrity. "Shape fit" dies with the rigor dial; the rest is team-review apparatus. Placed in `/design-project` Phase 1, matching the self-review steps `designing-tasks` and `writing-plans` already carry |
 | User journeys with named protagonists | **reject** | Theater for solo tools. The rubric's own "shape fit" dimension says as much about single-operator products |
-| Standalone Glossary section | **reject**, absorbed | The real need is ML-specific: unit of analysis, label definition, prediction window. That became `prd-ml.md`'s Prediction target section, which is where the ambiguity actually costs weeks |
+| Standalone Glossary section | **reject**, absorbed — *reversed 2026-08-09, see §6* | The real need is ML-specific: unit of analysis, label definition, prediction window. That became `prd-ml.md`'s Prediction target section, which is where the ambiguity actually costs weeks |
 | MVP Scope separate from Non-Goals | **reject** | Chimera's single Non-goals fence does the same work in half the space |
 | Product brief, PRFAQ upstream | **reject** | `/design-project` Phase 1 is a conversation; a second upstream artifact adds a layer with one caller |
 | `addendum.md` tech-how sink | **reject**, already solved | ADRs in Phase 2 and `docs/system-design.md` in Phase 3 hold the technical how, with better structure than a sink file |
@@ -114,3 +114,13 @@ Three boundaries hold the loop's existing shape:
 - The FR is an upward citation the spec may renegotiate, not an authority
   over it. The spec still owns behaviour, edge cases, and interfaces; the
   plan still owns steps and tests.
+
+## 6. Amendment, 2026-08-09
+
+The Glossary rejection above is reversed. Both PRD templates now carry a
+`## Terms` table. The reason is not a change of taste: chimera adopted
+Simplified Technical English as the genesis register, and STE's central
+rule — one word, one meaning — has nothing to anchor to without a table
+naming which words those are. See
+`2026-08-09-genesis-amendments-from-field-use.md` §3. Every other verdict
+in §3 above stands.

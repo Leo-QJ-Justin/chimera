@@ -2,6 +2,17 @@
 
 > CRISP-DM phases 1-2 in template form; phases 3-6 execute through the loop
 > via docs/roadmap.md.
+>
+> Written in Simplified Technical English (ASD-STE100 register): short
+> sentences, active voice, simple tenses, one meaning per term.
+
+## Terms
+{{One row per term that is not common English. One meaning each — the
+document uses the term this way everywhere. Delete the section if empty.}}
+
+| Term | Meaning |
+|---|---|
+| {{term}} | {{one sentence, no synonyms}} |
 
 ## Business understanding
 - **Objective:** {{what decision or capability this enables}}
@@ -26,10 +37,34 @@ in.}}
   session? sensor reading?}}
 - **Label definition:** {{exactly what counts as positive, including the
   boundary cases}}
-- **Prediction window:** {{how far ahead, from which point in time}}
 - **Exclusions:** {{rows deliberately outside scope, and why}}
 - **Known prevalence:** {{positive rate if known; "unknown until EDA" is a
   valid answer and becomes an early roadmap row}}
+
+### Issue schedule
+{{Time series only — delete for cross-sectional problems. A forecast is
+not specified until all eight rows are fixed. Leakage, evaluation, and
+serving all read from this table.}}
+
+| Property | Value |
+|---|---|
+| Issue frequency | {{how often a prediction is made}} |
+| Issue time | {{at what instant; configuration, but recorded per forecast}} |
+| As-of cutoff | {{what data the forecast may read — the issue time, by contract}} |
+| Target set | {{exactly which future intervals one issue covers}} |
+| Resolution | {{how long one predicted interval is}} |
+| Lead-time range | {{nearest and farthest interval, as durations}} |
+| Output shape | {{point, quantiles, or joint distribution; per interval or drawn jointly}} |
+| Re-issue policy | {{may the same target be forecast again, and under the same id}} |
+
+**Shape:** {{fixed-event (one issue covers one whole target period) or
+rolling t+1}}
+
+**Worked example:** {{one issue with concrete timestamps — issued at
+<time>, covers <intervals> of <date>, leads <range>; may read <sources>,
+must not read <sources>; scored against <final data> at <lag>. The
+example is what forces the ambiguity out: reviewers catch timing bugs in
+concrete numbers that they miss in prose.}}
 
 ## Data understanding
 - **Sources:** {{datasets, where they live, how they're obtained/refreshed}}

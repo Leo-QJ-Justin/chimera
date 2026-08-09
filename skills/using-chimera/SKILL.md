@@ -35,6 +35,7 @@ this skill.)
 | About to claim done / fixed / passing | chimera:verifying-before-done |
 | Work complete, deciding integration | chimera:finishing-a-branch |
 | Creating or editing a skill | chimera:creating-skills |
+| Writing a genesis doc, spec, or text an agent must parse | chimera:writing-in-ste |
 
 Process skills come first; they set the approach.
 

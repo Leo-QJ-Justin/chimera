@@ -40,12 +40,13 @@ acceptance criteria. Spike code is never merged.
 
 ## Contents
 
-- **9 skills** — `using-chimera` (bootstrap, injected each session),
+- **10 skills** — `using-chimera` (bootstrap, injected each session),
   `designing-tasks`, `writing-plans`, `test-driven-development`,
   `exploring-reproducibly`, `verifying-before-done`,
   `debugging-systematically`, `finishing-a-branch`, `creating-skills`
   (skill authoring with a should-this-exist gate — replaces the external
-  skill-creator plugin)
+  skill-creator plugin), `writing-in-ste` (the genesis-document register:
+  one meaning per term, active voice, short sentences)
 - **3 commands** — `/design-project`, `/start-task`, `/new-project`
 - **2 agents** — `code-reviewer` (read-only tools; confidence-gated; "zero
   findings is a valid review"; build + exploration rubrics) and

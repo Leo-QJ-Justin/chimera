@@ -58,13 +58,16 @@ rerun before numbers are reported; methodology review at finish.
 
 ## 6. `/design-project` (conversation only, no scaffold needed)
 
-Prompt: "an app that tracks my reading list". Expect: type question →
-one-at-a-time discovery questions → prd-app template filled, with FR
-blocks carrying testable `Done when` lines, a guard metric, and every
-`[ASSUMPTION]` tag reaching the index → the four-point self-check run
-before the approval gate → architecture tradeoffs recorded as ADR →
-system-design module table → roadmap table with modes and a `Realizes`
-column whose IDs resolve to PRD requirements → offer to scaffold. Abort
+Prompt: "an app that tracks my reading list". Expect: type question, and
+no distill question because no prior corpus exists → one-at-a-time
+discovery questions → prd-app template filled, carrying the STE register
+line, a Terms table, FR blocks with testable `Done when` lines, a guard
+metric, and every `[ASSUMPTION]` tag reaching the index → the five-point
+self-check run before the approval gate → architecture tradeoffs recorded
+as ADRs with status, tier, and reversal-cost lines → system-design module
+table with a mermaid data flow → roadmap table with modes, a `Realizes`
+column whose IDs resolve to PRD requirements, at least one gate row, and
+the critical-path and parallel footer notes → offer to scaffold. Abort
 before scaffold; confirm all four docs exist and are committed.
 
 ## Pass criteria

@@ -26,6 +26,21 @@ Ask two questions (one message each):
 1. Project type: **application** | **ML/data** | **hybrid**?
 2. Does a repo already exist for this? (If yes, Phase 5 just commits docs.)
 
+Ask a third only when an authoritative document corpus already exists —
+prior design notes, audits, an execution roadmap, a ratified architecture:
+
+3. **Brainstorm** or **distill**? Distill converts the corpus into the
+   genesis artifacts; it does not re-litigate decisions the corpus already
+   settled. Every approval gate below still applies — distillation changes
+   the input, not the discipline.
+
+## Register
+
+Write every genesis document per chimera:writing-in-ste. Each one opens
+with the register line that skill specifies. Run the rewrite pass before
+each approval gate, never after: a document approved in one register and
+rewritten in another is a second document that nobody approved.
+
 ## Phase 1 — DISCOVER
 
 Brainstorm the idea conversationally — the problem, who it's for, what
@@ -38,6 +53,11 @@ recommendation where useful. Then fill the type-matched PRD template into
   1-2: business understanding, data understanding, constraints)
 - Hybrid → both templates' sections, merged (product shell + ML core)
 
+**Distill mode only:** the PRD opens with a precedence header — the
+ordered list of source documents, and the rule that these genesis docs
+win where sources disagree. Without it, a stale audit and a fresh ADR
+carry equal weight for the next reader.
+
 **Self-check before presenting** — fix inline, no re-review:
 
 1. **Substance** — cut any section that drives no decision.
@@ -48,6 +68,8 @@ recommendation where useful. Then fill the type-matched PRD template into
    in the index; every omission stated in Non-goals rather than left for
    the reader to infer.
 4. **ID integrity** — FR IDs unique and contiguous.
+5. **Register** — the STE pass is run and the Terms table covers every
+   term in the document that is not common English.
 
 **Approval gate:** your human partner approves `docs/prd.md` before
 Phase 2.
@@ -64,11 +86,37 @@ decision, saved as ADRs in `docs/adr/NNN-<slug>.md`.
   model choice itself is a loop-side exploration task, per the decision
   rule.
 
+Each ADR carries three fields beyond the four above:
+
+- **Status** — `proposed` (a spike settles it), `accepted`,
+  `accepted, under challenge` (a later ADR contests it; name that ADR),
+  or `superseded by NNN`. A live disagreement stays visible; silence is
+  not resolution.
+- **Tier** — the reversal cost, which is the build-order argument.
+  Tier 1: adopt before the first roadmap row, unrecoverable later.
+  Tier 2: adopt before the second consumer. Tier 3: reversible, recorded
+  for completeness. Or: permanent constraint.
+- **Reversal cost**, one line in Consequences — cost to reverse × chance
+  of reversal × chance the project still exists then. This arithmetic is
+  what separates a day-one decision from speculative generality.
+
+Two consolidation patterns keep the directory readable: small reversible
+technology choices go in **one table ADR**, one row each, not one file
+each; and deliberate shortcuts go in a **debt register ADR** with an
+expiry date per entry, reviewed at every gate row.
+
 ## Phase 3 — SYSTEM DESIGN
 
 Fill `${CLAUDE_PLUGIN_ROOT}/templates/system-design.md` into
 `docs/system-design.md`: the module table (module | responsibility |
 inputs | outputs | depends on), data flow, repo layout, open questions.
+
+Data flows and module pipelines are mermaid `flowchart`; schedules are
+mermaid `gantt`. ASCII arrows are correct only for a single linear chain,
+and repo layout stays a text tree.
+
+**Self-check before presenting:** the STE pass is run, and every module
+name in the table matches the name used in the PRD Terms table.
 
 **Approval gate:** your human partner approves before Phase 4.
 
@@ -79,9 +127,15 @@ Derive `docs/roadmap.md`:
 ```markdown
 # Roadmap
 
+> A slipped gate beats a false-green gate.
+
 | # | Task | Mode | Realizes | Depends on | Status |
 |---|------|------|----------|------------|--------|
 | 1 | <task> | build | FR-1, FR-3 | - | pending |
+| 4 | Gate: <what must hold> | exploration | - | 1-3 | pending |
+
+Critical path: 1 → 3 → 4 → 7.
+Parallel: rows 2 and 5 depend on nothing in the path above.
 ```
 
 `Realizes` carries the PRD requirement IDs the row delivers, so a task
@@ -89,6 +143,12 @@ inherits its acceptance criteria instead of restating them. Rows that
 realize no requirement — spikes, infrastructure, every exploration row —
 carry `-`; an exploration task answers a question rather than delivering
 a capability, and citing an FR there is false precision.
+
+**Gate rows** sit after the rows they gate. Each is an exploration row
+whose deliverable is a written go/no-go note in `docs/`, naming what was
+checked and what the result permits. A gate with no written note did not
+happen. The two footer lines cost three lines and answer the questions
+every session opens with: what is blocking, and what can run now.
 
 - Application: rows from system-design modules in dependency order.
 - ML/data: compile CRISP-DM phases 3-6 — data preparation → build rows;
