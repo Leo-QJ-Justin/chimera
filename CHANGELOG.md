@@ -4,6 +4,33 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.8.1] - 2026-08-10
+
+Corrects the partitioning shipped hours earlier in 1.8.0. No capability
+is added or removed; the same material now lives in one artifact instead
+of two. Reasoning:
+`docs/research/2026-08-10-ai-architecture-trawl.md` §5.
+
+### Changed
+- `templates/architecture-ai.md` is **removed**. Its content folds into
+  `templates/system-design.md`, which gains a `Boundary` column on the
+  module table (deterministic or probabilistic, with the output contract
+  named for anything probabilistic), an **External interfaces** table
+  beside the internal module contracts, and an **AI properties** section
+  — memory in four layers, evaluation in three, cost with its arithmetic
+  — deleted for projects with no model component.
+- The model, embedding, retrieval-store, and framework choices are Phase
+  2 ADR topics named in `/design-project`, not template sections. They
+  were recording a decision, its reasoning, and its rejected alternative
+  beside the ADR that already held all three.
+
+Why: memory, evaluation, and cost are whole-system properties, the same
+kind of thing as the risk table already in system design. The remaining
+sections each had a home already — ADRs for the technology choices, the
+module table for the boundary and the interfaces. Two architecture
+artifacts now: ADRs answer why this and not that, system design answers
+what the system is.
+
 ## [1.8.0] - 2026-08-10
 
 Trawl of `sagarika29/ai-system-architect` (MIT). Verdicts and the two

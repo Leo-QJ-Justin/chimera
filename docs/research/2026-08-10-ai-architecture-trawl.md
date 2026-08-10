@@ -38,7 +38,7 @@ silently.
 
 | Device | Verdict | Reason |
 |---|---|---|
-| Nine AI concern areas | **adopt** | Became `templates/architecture-ai.md`, filled at Phase 2 whenever the system has an LLM, embedding, or retrieval component — a condition, not a project type |
+| Nine AI concern areas | **adopt** | Shipped 1.8.0 as `templates/architecture-ai.md`; folded into `templates/system-design.md` in 1.8.1 — see §5. The concerns all survive, in one file rather than two |
 | Memory as four explicit layers | **adopt** | Within-request, cross-turn, long-term, caching, with "none" as a recorded decision. The privacy consequence of what persists is stated |
 | Cost with visible arithmetic | **adopt** | Unit assumptions, the formula, a low/expected/high range, and the dominant driver. Every price marked `[assumed — verify]` |
 | Evaluation in three layers | **adopt** | Offline, online, human. The clause that earns its place: state the minimum golden-set size **and who realistically produces it** — evaluation plans die on the second question |
@@ -52,7 +52,11 @@ silently.
 | Banned-phrase list | **reject** | `rules/common/documentation.md` §Register already forbids selling, superlatives, and rhetoric |
 | Mechanical output validator | **considered, not adopted** | Chimera's own `creating-skills` rule says to automate what a regex can enforce, which argues for a genesis-doc checker. The maintainer declined it for now; it stays available as a future item rather than a silent omission |
 
-## 4. Why the concerns became a template
+## 4. Why the concerns became a template (superseded by §5)
+
+*The reasoning below chose a separate template over a Phase 2 checklist.
+The first two arguments held; the third did not survive review. Read §5
+for what shipped.*
 
 The alternative was a checklist inside Phase 2. Three arguments decided
 it:
@@ -69,3 +73,41 @@ it:
 The template names which decisions must exist and what each must resolve.
 The reasoning, status, tier, reversal cost, and confidence stay in the
 ADRs, so no field appears in both.
+
+## 5. Folded into system design, 2026-08-10
+
+`templates/architecture-ai.md` shipped in 1.8.0 and was removed in 1.8.1.
+Its content is now a section of `templates/system-design.md`. §4 asked
+the wrong question — separate template or inline checklist — and never
+asked whether an artifact that already existed was the right home.
+
+Three overlaps forced it, each producing the same symptom: one question,
+two files to open.
+
+- **Sections 1-4 duplicated the ADRs.** Model, embeddings, retrieval
+  store, and framework each recorded a decision, its reasoning, and its
+  rejected alternative. That is an ADR, written beside the real ADR. They
+  are now Phase 2 ADR topics, named in the command, with no second home.
+- **Section 5 duplicated the module table.** External contract in one
+  file, module I/O contracts in another. External interfaces now sit
+  beside the module table.
+- **The boundary table's rows were modules.** "Retrieval is
+  deterministic, generation is probabilistic" is a property of a module,
+  filed away from the modules. It is now a column on the module table.
+  Section 7 Deployment had the same fault in miniature: target
+  environment and packaging are hosting decisions, which belong to an ADR
+  and the repo layout.
+
+What remained — memory layers, evaluation layers, cost — are whole-system
+properties, the same kind of thing as the risk table that already lived
+in system design. There was no principled reason for risks to sit in one
+file and cost in another.
+
+The one real objection is timing: cost and model choice belong at Phase
+2, where ADRs are written, while system design is Phase 3. When a Phase 3
+cost estimate undermines a Phase 2 decision, that ADR takes status
+`accepted, under challenge` and names the system design as the
+challenger. The vocabulary shipped in 1.7.0 for exactly this case.
+
+Result: two architecture artifacts. ADRs answer why this and not that.
+System design answers what the system is.

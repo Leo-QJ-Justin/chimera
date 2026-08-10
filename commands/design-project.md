@@ -86,13 +86,15 @@ decision, saved as ADRs in `docs/adr/NNN-<slug>.md`.
   model choice itself is a loop-side exploration task, per the decision
   rule.
 
-**When the system has an LLM, embedding, or retrieval component** — of
-any project type — fill `${CLAUDE_PLUGIN_ROOT}/templates/architecture-ai.md`
-into `docs/architecture-ai.md` first. It names the decisions such a system
-forces (model, embeddings, retrieval store, framework, interfaces, memory,
-deployment, evaluation, cost) and the deterministic-versus-probabilistic
-boundary that decides what can be tested. Each resolved concern becomes an
-ADR; the template holds no ADR field.
+- Systems with a model component — of any project type — additionally
+  decide: model and tier, embedding model with the chunking it implies,
+  retrieval store, and orchestration framework or none. Judge the store
+  on three axes only (expected corpus size, filtering and metadata needs,
+  operational burden the team can absorb) and under roughly 100k vectors
+  state whether no dedicated store is correct. Justify a framework by
+  what it removes, not by what it offers, and name the lock-in and
+  debugging cost it brings. Memory, evaluation, and cost are properties
+  of the whole system, not decisions — they land in Phase 3.
 
 Each ADR carries four fields beyond the four above:
 
@@ -135,7 +137,18 @@ over-engineering today and correct at ten times the scale.
 
 Fill `${CLAUDE_PLUGIN_ROOT}/templates/system-design.md` into
 `docs/system-design.md`: the module table (module | responsibility |
-inputs | outputs | depends on), data flow, repo layout, open questions.
+inputs | outputs | depends on | boundary), external interfaces, data
+flow, repo layout, risks, open questions.
+
+The `Boundary` column marks each module deterministic or probabilistic
+and decides what can be tested; every probabilistic module names the
+output contract that fails closed. Drop the column when nothing in the
+system is probabilistic.
+
+Systems with a model component also fill the **AI properties** section —
+memory in four layers, evaluation in three, and cost with its arithmetic
+shown. These are properties of the whole system, which is why they sit
+here and not in an ADR. Delete the section for every other project.
 
 Data flows and module pipelines are mermaid `flowchart`; schedules are
 mermaid `gantt`. ASCII arrows are correct only for a single linear chain,

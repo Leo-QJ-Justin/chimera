@@ -72,12 +72,15 @@ to PRD requirements, at least one gate row, and the critical-path and
 parallel footer notes → offer to scaffold. Abort before scaffold; confirm
 all four docs exist and are committed.
 
-The reading-list prompt has no model component, so `architecture-ai.md`
-must **not** appear. To exercise it, run a second pass on "a support
-assistant that answers from our internal docs" and confirm Phase 2 fills
-`docs/architecture-ai.md`, that sections not needed say "none" with a
-reason rather than sitting blank, and that the cost section shows its
-arithmetic with prices marked `[assumed — verify]`.
+The reading-list prompt has no model component, so system design must
+carry **no** AI properties section and no `Boundary` column. To exercise
+those, run a second pass on "a support assistant that answers from our
+internal docs" and confirm `docs/system-design.md` gains the AI
+properties section with all four memory layers decided, an evaluation
+metric that is not the word "accuracy", cost arithmetic whose prices are
+marked `[assumed — verify]`, and a `Boundary` column splitting the
+retrieval modules from the generating one. Sections not needed say "none"
+with a reason rather than sitting blank.
 
 ## Pass criteria
 
