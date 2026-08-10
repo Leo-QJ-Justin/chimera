@@ -4,6 +4,54 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.8.0] - 2026-08-10
+
+Trawl of `sagarika29/ai-system-architect` (MIT). Verdicts and the two
+rejected devices: `docs/research/2026-08-10-ai-architecture-trawl.md`.
+
+### Added
+- `templates/architecture-ai.md` — the decisions an LLM, embedding, or
+  retrieval component forces: the deterministic-versus-probabilistic
+  boundary, then model, embeddings, retrieval store, framework,
+  interfaces, memory in four layers, deployment, evaluation in three
+  layers, and cost with visible arithmetic. Filled at `/design-project`
+  Phase 2 whenever the system has such a component — a condition, not a
+  project type, so an application and an ML/data project can both use it.
+  "None" is a recorded decision; a blank section is a gap. The template
+  names which decisions must exist; the ADRs hold their reasoning.
+- Risk register in `templates/system-design.md`: risk, likelihood,
+  impact, mitigation, and **detection signal**, ranked by expected cost,
+  with at least one non-technical row. A mitigation with no detection
+  signal is a hope, and where a roadmap gate row checks the risk, the
+  signal names that row.
+- Confidence field on every ADR — `[High]`, `[Moderate — depends on X]`,
+  `[Low — verify before committing]` — and a Phase 2 self-check that
+  fails uniform confidence: if every tag reads High, the tradeoffs were
+  not examined.
+
+### Changed
+- Every deferral — debt-register entry, deferred roadmap item, future
+  improvement — is now written as **trigger condition → change →
+  unlock**. A deferral with no trigger never gets revisited, because
+  nothing says when to look.
+
+### Deferred
+- **AI Application scaffold / LLM-RAG skeleton** — trigger: a second
+  project needs the same retrieval-and-serving shape → change: extract
+  the skeleton from the first one that ships → unlock: `/design-project`
+  Phase 5 scaffolds AI applications the way it already scaffolds ML
+  pipelines. `templates/architecture-ai.md` is the contract such a
+  skeleton must satisfy.
+- **Count and geospatial EDA playbooks** — trigger: reference material
+  with real technique for either topic lands → change: draft from it in
+  the established playbook form → unlock: full topic coverage in
+  `exploring-reproducibly`.
+- **Mechanical genesis-doc validator** — trigger: a filled PRD reaches
+  an approval gate with a missing section or a broken FR reference →
+  change: a script in `tests/` that greps for required sections, FR IDs
+  with Done-when lines, and assumption-index round-trip, failing closed →
+  unlock: the prose self-checks stop being the only guard.
+
 ## [1.7.0] - 2026-08-09
 
 Seven amendments distilled from a field run of 1.6.0 — a `/design-project`

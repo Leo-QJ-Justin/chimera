@@ -86,7 +86,15 @@ decision, saved as ADRs in `docs/adr/NNN-<slug>.md`.
   model choice itself is a loop-side exploration task, per the decision
   rule.
 
-Each ADR carries three fields beyond the four above:
+**When the system has an LLM, embedding, or retrieval component** — of
+any project type — fill `${CLAUDE_PLUGIN_ROOT}/templates/architecture-ai.md`
+into `docs/architecture-ai.md` first. It names the decisions such a system
+forces (model, embeddings, retrieval store, framework, interfaces, memory,
+deployment, evaluation, cost) and the deterministic-versus-probabilistic
+boundary that decides what can be tested. Each resolved concern becomes an
+ADR; the template holds no ADR field.
+
+Each ADR carries four fields beyond the four above:
 
 - **Status** — `proposed` (a spike settles it), `accepted`,
   `accepted, under challenge` (a later ADR contests it; name that ADR),
@@ -99,11 +107,29 @@ Each ADR carries three fields beyond the four above:
 - **Reversal cost**, one line in Consequences — cost to reverse × chance
   of reversal × chance the project still exists then. This arithmetic is
   what separates a day-one decision from speculative generality.
+- **Confidence** — `[High]`, `[Moderate — depends on X]`, or
+  `[Low — verify before committing]`.
 
 Two consolidation patterns keep the directory readable: small reversible
 technology choices go in **one table ADR**, one row each, not one file
-each; and deliberate shortcuts go in a **debt register ADR** with an
-expiry date per entry, reviewed at every gate row.
+each; and deliberate shortcuts go in a **debt register ADR**, reviewed at
+every gate row.
+
+Every deferral — a debt-register entry, a deferred roadmap item, a future
+improvement — is written as **trigger condition → change → unlock**. A
+deferral with no trigger is a wish, and it never gets revisited because
+nothing tells you when to look. Name one thing that would be
+over-engineering today and correct at ten times the scale.
+
+**Self-check before presenting** — fix inline, no re-review:
+
+1. **Alternatives** — every decision names the option it beat, and why.
+2. **Confidence varies** — if every tag reads `[High]`, the tradeoffs
+   were not examined. Uniform confidence across a set of decisions is a
+   claim nobody can hold.
+3. **Forced components** — every component ties to a stated requirement.
+   Remove the ones that do not.
+4. **Triggers** — every deferral carries its trigger condition.
 
 ## Phase 3 — SYSTEM DESIGN
 

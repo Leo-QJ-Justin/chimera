@@ -34,6 +34,18 @@ way. Delete either block if the project has no such structure.}}
 
 {{Where things live: pipeline code vs notebooks/ vs docs/ vs tests/.}}
 
+## Risks
+
+{{4-6 rows, ranked by expected cost. At least one is non-technical:
+adoption, data access, ownership, or regulatory. The detection signal is
+the load-bearing column — a mitigation with no detection signal is a
+hope. Where a roadmap gate row checks the risk, name that row as the
+signal.}}
+
+| Risk | Likelihood | Impact | Mitigation | Detection signal |
+|---|---|---|---|---|
+| {{what goes wrong}} | {{low/med/high}} | {{low/med/high}} | {{what reduces it}} | {{what tells you it is happening}} |
+
 ## Open questions
 
 {{Unresolved items — each should become an ADR or an exploration task.}}

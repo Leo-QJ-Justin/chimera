@@ -64,11 +64,20 @@ discovery questions → prd-app template filled, carrying the STE register
 line, a Terms table, FR blocks with testable `Done when` lines, a guard
 metric, and every `[ASSUMPTION]` tag reaching the index → the five-point
 self-check run before the approval gate → architecture tradeoffs recorded
-as ADRs with status, tier, and reversal-cost lines → system-design module
-table with a mermaid data flow → roadmap table with modes, a `Realizes`
-column whose IDs resolve to PRD requirements, at least one gate row, and
-the critical-path and parallel footer notes → offer to scaffold. Abort
-before scaffold; confirm all four docs exist and are committed.
+as ADRs with status, tier, reversal-cost, and confidence lines, with the
+confidence tags not all reading `[High]` → system-design module table
+with a mermaid data flow and a risk table whose rows carry detection
+signals → roadmap table with modes, a `Realizes` column whose IDs resolve
+to PRD requirements, at least one gate row, and the critical-path and
+parallel footer notes → offer to scaffold. Abort before scaffold; confirm
+all four docs exist and are committed.
+
+The reading-list prompt has no model component, so `architecture-ai.md`
+must **not** appear. To exercise it, run a second pass on "a support
+assistant that answers from our internal docs" and confirm Phase 2 fills
+`docs/architecture-ai.md`, that sections not needed say "none" with a
+reason rather than sitting blank, and that the cost section shows its
+arithmetic with prices marked `[assumed — verify]`.
 
 ## Pass criteria
 

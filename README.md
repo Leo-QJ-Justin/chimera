@@ -55,8 +55,9 @@ acceptance criteria. Spike code is never merged.
 - **2 hooks** — SessionStart bootstrap injection (`startup|clear|compact`);
   warn-only branch nudge on source edits on main (never blocks;
   `CHIMERA_SILENCE_NUDGE=1` to mute)
-- **5 templates** — `CLAUDE.user.md`, `CLAUDE.project.md`, `prd-app.md`,
-  `prd-ml.md`, `system-design.md`
+- **6 templates** — `CLAUDE.user.md`, `CLAUDE.project.md`, `prd-app.md`,
+  `prd-ml.md`, `system-design.md`, `architecture-ai.md` (the decisions an
+  LLM, embedding, or retrieval component forces)
 - **1 rules pack** — `rules/common/` + `rules/python/`, copied into each
   project by `/new-project` (see [Rules](#rules))
 
