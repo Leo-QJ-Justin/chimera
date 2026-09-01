@@ -165,6 +165,16 @@ Type 'discard' to confirm.
 Wait for that exact word. Then cd to MAIN_ROOT, clean up (Step 6), and
 `git branch -D <branch>`.
 
+## Amendment path
+
+For post-merge scope corrections: a small behavior change to
+already-integrated work, requested after the loop closed. No spec, no
+plan. Requirements: (a) tests move with the change; (b) every document
+that states the amended behavior — spec, PRD, system design — moves in
+the same commit; a requirement label that no longer matches shipped
+behavior is stale. Micro-branch optional; full test suite before the
+merge or commit, as always.
+
 ## Step 6: Cleanup Workspace
 
 Runs for Option 1 and confirmed discards; Options 2 and 3 always preserve
