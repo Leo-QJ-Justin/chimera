@@ -21,6 +21,13 @@ in disguise.}}
 ## Solution
 {{What it is; how it addresses the problem; what it deliberately is NOT.}}
 
+## Commitments realized
+{{Reference the Phase 1b BIND entries this PRD realizes and, when
+present, `docs/technical-requirements.md`. The PRD cites commitments;
+it does not re-litigate them. When the persistent-model trigger did not
+fire, this is where the one-line persistence statement lives
+("Persistence: mutable state, single user, resets acceptable").}}
+
 ## Requirements
 {{Numbered globally and never renumbered — roadmap rows and task specs
 cite these IDs, so an ID keeps its meaning once assigned. A capability

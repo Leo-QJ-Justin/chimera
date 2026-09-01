@@ -1,6 +1,6 @@
 ---
 name: eda-profiler
-description: Mechanical first-pass profiling of a new dataset. Use when a dataset file needs profiling before exploration begins - dispatched by exploring-reproducibly after the snapshot is pinned, or on demand when asked to profile a CSV/parquet/table. Returns a draft Observations & Findings in the project's analysis style contract.
+description: Mechanical first-pass profiling of a new dataset. Use when a dataset file needs profiling before exploration begins - dispatched by exploring-reproducibly after the snapshot is pinned, or on demand when asked to profile a CSV/parquet/table. Returns a draft Observations & Findings in the project's analysis style contract. For a non-tabular corpus of heterogeneous artifacts, dispatch corpus-profiler instead.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---

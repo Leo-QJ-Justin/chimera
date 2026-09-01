@@ -43,10 +43,89 @@ rewritten in another is a second document that nobody approved.
 
 ## Phase 1 — DISCOVER
 
-Brainstorm the idea conversationally — the problem, who it's for, what
-success looks like. One question at a time; propose options with a
-recommendation where useful. Then fill the type-matched PRD template into
-`docs/prd.md`:
+Brainstorm the idea conversationally — the problem, who it's for, who
+consumes the output, what success looks like. One question at a time;
+propose options with a recommendation where useful. Consumer discovery
+is conversation, not profiling; it happens here, because Phase 1b reads
+the answer.
+
+## Phase 1a — DATA-CONTACT SPIKE
+
+When the project consumes an existing corpus or artifact format (files,
+exports, logs, an API's real responses), the PRD is not written until a
+data-contact spike completes. Skip this phase when no such corpus
+exists.
+
+1. Pin the sample set.
+2. Locate the priority authority: the business document (reportout,
+   charter, PRD draft) that field priorities will be judged against.
+   If none exists, your human partner names priorities explicitly;
+   priorities are never invented by the profiler.
+3. Dispatch the `corpus-profiler` agent with the pinned set, the
+   authority document, and the downstream decisions the profile must
+   ground. Review its report and script; you commit both (subagents
+   never commit).
+4. Close any evidence gaps the report flags as decision-blocking (a
+   targeted inspection of unreadable items, a missing population join)
+   before writing the brief.
+5. Write the decision brief from the profile per the "From profile to
+   brief" recipe in chimera:writing-comparative-reports. Close it per
+   the evidence-closure rule: each adopted finding ends as evidence →
+   constraint → implications, or "no design consequence." These
+   constraints are the input to Phase 1b.
+6. The PRD (Phase 1c) is written against the brief. Observed counts
+   freeze into test fixtures for the later build tasks. State
+   explicitly: the report records observations, the tests state the
+   contract — a deliberate divergence between them is a documented
+   decision, not drift.
+
+## Phase 1b — BIND
+
+Convert the evidence into commitments. Take the constraints from the
+data-contact spike's closure section and the business intent from the
+Phase 1 brainstorm. For each commitment, write one entry:
+
+**evidence → constraint → implications for the next phase.**
+
+Commitments come in three kinds:
+
+1. **Format and input requirements.** What submissions the system
+   accepts; what is out and handled by explicit workaround instead of
+   system complexity.
+2. **Scope boundaries.** Which subset of the observed variation the
+   pilot commits to supporting; what is deferred, with its trigger.
+3. **The persistent model** — when its trigger fires, invoke
+   chimera:persistent-model-discovery and produce
+   `docs/technical-requirements.md`. Untriggered: one line in the PRD
+   ("Persistence: mutable state, single user, resets acceptable"), no
+   file.
+
+An entry whose implications name no design consequence is a finding,
+not a commitment; it stays in the spike report.
+
+**Ordering:** Phase 1b needs two inputs that must exist first — the
+spike's evidence and the brainstorm's answer to "who is this for and
+who consumes the output." Phase 1b precedes PRD *writing*, not the
+discovery dialogue. Sequence: brainstorm → data-contact spike → BIND →
+PRD.
+
+**Self-check before presenting** — fix inline, no re-review:
+
+1. **Traceability** — every commitment traces to a spike finding or a
+   brainstorm statement.
+2. **Dispositions** — every violator of a format or scope commitment
+   has a disposition.
+3. **TRD citations** — the TRD, when present, cites the BIND entries
+   it realizes.
+
+**Approval gate:** your human partner approves the commitments before
+the PRD is written. The PRD then cites them; it does not re-litigate
+them.
+
+## Phase 1c — PRD
+
+Fill the type-matched PRD template into `docs/prd.md`, written against
+the Phase 1a brief and the Phase 1b commitments:
 
 - Application → `${CLAUDE_PLUGIN_ROOT}/templates/prd-app.md`
 - ML/data → `${CLAUDE_PLUGIN_ROOT}/templates/prd-ml.md` (CRISP-DM phases
@@ -70,6 +149,9 @@ carry equal weight for the next reader.
 4. **ID integrity** — FR IDs unique and contiguous.
 5. **Register** — the STE pass is run and the Terms table covers every
    term in the document that is not common English.
+6. **Commitments** — every commitment the PRD's "Commitments realized"
+   section cites exists in Phase 1b's output; no FR contradicts a
+   commitment. Run this in the same pass as the ID check.
 
 **Approval gate:** your human partner approves `docs/prd.md` before
 Phase 2.
@@ -117,6 +199,12 @@ technology choices go in **one table ADR**, one row each, not one file
 each; and deliberate shortcuts go in a **debt register ADR**, reviewed at
 every gate row.
 
+When `docs/technical-requirements.md` exists, record a one-line Tier-1
+ADR: "Persistent model per `docs/technical-requirements.md`; reversal
+cost: schema migration with data backfill." The persistent model is one
+interlocking design and the TRD is its one home; the ADR is the pointer
+that keeps the decision index complete — never two competing homes.
+
 Every deferral — a debt-register entry, a deferred roadmap item, a future
 improvement — is written as **trigger condition → change → unlock**. A
 deferral with no trigger is a wish, and it never gets revisited because
@@ -132,6 +220,8 @@ over-engineering today and correct at ten times the scale.
 3. **Forced components** — every component ties to a stated requirement.
    Remove the ones that do not.
 4. **Triggers** — every deferral carries its trigger condition.
+5. **TRD pointer** — when a TRD exists, the one-line Tier-1 ADR
+   pointing at it exists.
 
 ## Phase 3 — SYSTEM DESIGN
 
@@ -154,8 +244,10 @@ Data flows and module pipelines are mermaid `flowchart`; schedules are
 mermaid `gantt`. ASCII arrows are correct only for a single linear chain,
 and repo layout stays a text tree.
 
-**Self-check before presenting:** the STE pass is run, and every module
-name in the table matches the name used in the PRD Terms table.
+**Self-check before presenting:** the STE pass is run; every module
+name in the table matches the name used in the PRD Terms table; and
+when a TRD exists, the preamble's grain, immutability policy, and
+consumers match the TRD verbatim.
 
 **Approval gate:** your human partner approves before Phase 4.
 

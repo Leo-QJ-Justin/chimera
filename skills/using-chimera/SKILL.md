@@ -37,6 +37,7 @@ this skill.)
 | Small behavior change to already-merged work | chimera:finishing-a-branch (Amendment path) |
 | Creating or editing a skill | chimera:creating-skills |
 | Writing a genesis doc, spec, or text an agent must parse | chimera:writing-in-ste |
+| Profiling a corpus, comparing tools, analyzing logs — any many-instance investigation | chimera:writing-comparative-reports |
 
 Process skills come first; they set the approach.
 

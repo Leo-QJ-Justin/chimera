@@ -73,7 +73,7 @@ execute → verify).
 | `[ASSUMPTION]` tags + index | **adopt** | An LLM drafting from conversation infers constantly; an unlabelled inference reads as a decision, which `rules/common/coding-style.md` forbids everywhere else |
 | Counter-metric | **adopt**, renamed *guard metric* | One line, and it applies harder to ML than to product work — the proxy metric must not be bought at the expense of latency, precision, or cost |
 | Open Questions section | **adopt** | Existed at system-design altitude, never at PRD altitude |
-| Length scales with stakes | **reject** | Considered and dropped: the maintainer's standing preference is the same meticulousness everywhere. Templates stay one-size at full rigor |
+| Length scales with stakes | **reject** — *qualified 2026-09-01, see §7* | Considered and dropped: the maintainer's standing preference is the same meticulousness everywhere. Templates stay one-size at full rigor |
 | Validation rubric, seven dimensions | **adopt in part** — four-point self-check | Substance, done-ness, scope honesty, ID integrity. "Shape fit" dies with the rigor dial; the rest is team-review apparatus. Placed in `/design-project` Phase 1, matching the self-review steps `designing-tasks` and `writing-plans` already carry |
 | User journeys with named protagonists | **reject** | Theater for solo tools. The rubric's own "shape fit" dimension says as much about single-operator products |
 | Standalone Glossary section | **reject**, absorbed — *reversed 2026-08-09, see §6* | The real need is ML-specific: unit of analysis, label definition, prediction window. That became `prd-ml.md`'s Prediction target section, which is where the ambiguity actually costs weeks |
@@ -124,3 +124,17 @@ rule — one word, one meaning — has nothing to anchor to without a table
 naming which words those are. See
 `2026-08-09-genesis-amendments-from-field-use.md` §3. Every other verdict
 in §3 above stands.
+
+## 7. Amendment, 2026-09-01
+
+The "length scales with stakes" rejection above is qualified, not
+reversed. The v2 improvement plan's Change 8 gives the
+persistent-model-discovery skill a conditional trigger — a full TRD
+when external consumers, audit trail, or migration cost fire; one PRD
+line otherwise — and that is a form of stakes calibration. The
+distinction that keeps the original rejection intact: BMAD scales
+*rigor* (a dial over how carefully any document is written); the
+trigger scales *scope* (a binary, evidence-based test of whether a
+whole artifact applies at all). Documents that exist are still written
+at full rigor. See `docs/specs/2026-09-01-v2-improvements.md`,
+Change 8.

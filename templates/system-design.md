@@ -8,6 +8,10 @@
 > Written in Simplified Technical English (ASD-STE100 register). Module
 > names match the PRD Terms table exactly.
 
+{{This design realizes {{grain}}, enforces {{immutability policy}}, and
+supports {{downstream consumers}} per `docs/technical-requirements.md`.
+Values match the TRD verbatim. Delete this line when no TRD exists.}}
+
 ## Module table
 
 | Module | Responsibility | Inputs | Outputs | Depends on | Boundary |

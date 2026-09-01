@@ -72,6 +72,13 @@ concrete numbers that they miss in prose.}}
 - **Expected quality issues:** {{gaps, revisions, survivorship, delays}}
 - **Initial EDA questions:** {{the first 3-5 things to look at}}
 
+## Commitments realized
+{{Reference the Phase 1b BIND entries this PRD realizes and, when
+present, `docs/technical-requirements.md`. The PRD cites commitments;
+it does not re-litigate them. When the persistent-model trigger did not
+fire, this is where the one-line persistence statement lives
+("Persistence: mutable state, single user, resets acceptable").}}
+
 ## Requirements
 {{System capabilities only — what the pipeline must do. Model quality
 lives in the metric fields above, never in an FR: a threshold written at
