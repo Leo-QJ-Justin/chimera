@@ -4,6 +4,65 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.9.0] - 2026-09-01
+
+Thirteen changes from the first full-project retrospective (a pipeline
+project run entirely under chimera), plus the three adoptions the parent
+repos (Superpowers, BMAD, ECC) still owed. Spec:
+`docs/specs/2026-09-01-v2-improvements.md`. The organizing principle: an
+evidence phase closes with binding constraints — evidence → constraint →
+implications — never with findings or verdicts alone.
+
+### Added
+- `skills/writing-comparative-reports` — the report contract and the
+  profile-to-brief recipe for any many-instance investigation (corpus
+  profiling, tool comparison, log analysis); routed from using-chimera.
+- `agents/corpus-profiler.md` — mechanical corpus profiling per that
+  contract, the non-tabular sibling of `eda-profiler` (which gains only
+  a dispatch note).
+- `skills/persistent-model-discovery` — six questions locking grain,
+  immutability, corrections, and consumers into an approved
+  `docs/technical-requirements.md` when its trigger fires; one PRD line
+  and no file otherwise.
+- `commands/retrospect.md` — the learning loop formalized: friction
+  events → quality gate (observed, reusable, overlap grep, form check)
+  → verdicts → improvement spec in the consuming project. Invoked,
+  never hooked.
+- `docs/process-map.md` — the living process map, auto-loaded via
+  CLAUDE.md and updated in the same commit as any flow change.
+- `docs/testing/pressure-scenarios/` — one scenario per change, derived
+  from its observed failure: setup, failure to reproduce, pass
+  condition, two stacked pressures, failure-form mapping. Every skill
+  edit walks its scenarios before landing.
+
+### Changed
+- `/design-project`: Phase 1 splits into DISCOVER → 1a DATA-CONTACT
+  SPIKE (PRD gated on profiling when a real corpus exists) → 1b BIND
+  (evidence converted into approved commitments) → 1c PRD; Phase 2
+  records the Tier-1 ADR pointing at the TRD; reference-integrity lines
+  added to the 1b/1c/2/3 self-checks.
+- `designing-tasks`: build-mode specs carry a Decisions section and a
+  flow sketch checked against the depth budget (two files per traced
+  call when the project defines none); FR contents are re-presented for
+  item-level re-confirmation; correctness-path heuristics and scope
+  renegotiations are asked as explicit questions, never only recorded.
+- `writing-plans` + `finishing-a-branch`: plans carry a `## Deviations`
+  section appended at the moment a departure is made; the list is
+  briefed to the code-reviewer as questions to judge.
+- `finishing-a-branch`: Amendment path for post-merge scope corrections
+  (tests and every doc stating the amended behavior move in the same
+  commit), routed from using-chimera.
+- `exploring-reproducibly` + `code-reviewer`: every adopt decision
+  closes with `Constraint:` and `Implications:` lines, or an explicit
+  "no design consequence".
+- `writing-in-ste`: notation gets a plain-word reading at first use
+  (rule row + process step).
+- Templates: both PRDs gain a required "Commitments realized" section;
+  system design gains the TRD preamble line.
+- `docs/research/2026-08-03-prd-trawl-bmad.md` §7: the
+  "length scales with stakes" rejection qualified — the TRD trigger
+  scales scope (whether an artifact applies), never rigor.
+
 ## [1.8.1] - 2026-08-10
 
 Corrects the partitioning shipped hours earlier in 1.8.0. No capability
