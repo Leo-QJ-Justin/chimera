@@ -9,6 +9,9 @@ Coding rules (auto-loaded):
 @rules/common/documentation.md
 @rules/python/coding-style.md
 
+Process map (auto-loaded) - the current shape of the whole loop:
+@docs/process-map.md
+
 - Feature work and multi-file changes happen on branches - enter via
   /start-task, never directly on main.
 - `plans/` is git-ignored working material; specs that ship live in
