@@ -132,7 +132,9 @@ notebooks/scripts in the range.
 - **Stopping rule (IMPORTANT):** experiments ran past the plan's stopping
   rule without a recorded plan edit.
 - **Decision line (IMPORTANT):** findings doc must end with
-  `Decision: <adopt|reject|park> because <numbers>`.
+  `Decision: <adopt|reject|park> because <numbers>`; an adopt decision
+  must also carry `Constraint:` and `Implications:` lines (or an
+  explicit "no design consequence").
 - Style in notebooks is **not a finding**.
 
 ## Output Format

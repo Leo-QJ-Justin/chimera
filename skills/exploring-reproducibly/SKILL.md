@@ -95,6 +95,20 @@ The findings doc closes with a decision line:
 Decision: <adopt | reject | park> because <numbers>
 ```
 
+Every **adopt** decision must carry its consequence chain:
+
+```
+Decision: adopt <what> because <numbers>
+Constraint: <what we now commit to>
+Implications: <the design or process consequences, named — or
+  "no design consequence">
+```
+
+`reject` and `park` keep the one-line form. A findings doc whose adopt
+decision names no constraint and no implications is incomplete: a
+verdict says what the evidence showed; a constraint says what we now
+build differently because of it.
+
 Exits:
 - **Adopt** → promoting the result is a NEW build-mode task; the experiment
   code is reference only (chimera:test-driven-development, The Promotion
