@@ -75,6 +75,14 @@ verbatim. Every task's requirements implicitly include this section.]
 
 [The Pattern Grounding citations: category → file:line → one-line note]
 
+## Deviations
+
+[Empty at approval. During execution, append every departure from the
+spec or plan at the moment it is made: what changed, and the
+implementer's rationale. A deviation that is not logged when made does
+not exist at review time. finishing-a-branch passes this list to the
+reviewer as questions.]
+
 ---
 ```
 

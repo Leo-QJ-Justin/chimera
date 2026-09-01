@@ -21,7 +21,10 @@ One review pass, before anything merges. No Stop-hook re-review.
 
 **Build mode:** dispatch the chimera `code-reviewer` agent once over
 `BASE..HEAD`, passing: the range, the spec (`docs/specs/...`), the plan's
-Global Constraints, and `mode: build`. Act by severity:
+Global Constraints, the plan's `## Deviations` list — every known
+deviation from the spec, each with the implementer's rationale, framed as
+a question for the reviewer to judge, not a fact to accept — and
+`mode: build`. Act by severity:
 - Critical → fix now, before proceeding
 - Important → fix before presenting the menu
 - Minor → note; fix or record
