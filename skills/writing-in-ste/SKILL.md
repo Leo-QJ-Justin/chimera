@@ -54,6 +54,7 @@ Applying it there costs meaning and gains nothing.
 | Lists for sequences | A numbered list for 3+ steps or conditions | A sequence buried inside one prose sentence |
 | Conditions first | "If the split is temporal, sort before you cut." | "Sort before you cut, if the split is temporal." |
 | Domain terms | Define each non-common-English term once, in the Terms table | Use a domain term the reader must infer |
+| Notation at first use | Give every symbol, formula variable, or abbreviation a plain-word reading where it first appears: "$P \setminus G$ (the pilot set excluding the gold set)" | Use undefined notation — a document that must be parsed without a follow-up question fails the moment it does |
 
 The last row is the one that connects to the templates. STE permits a
 project dictionary above its base vocabulary, which is what the PRD's
@@ -65,11 +66,13 @@ nothing to anchor to and domain nouns drift between documents.
 1. Read the whole text once for meaning. Do not rewrite before you know
    what it must still say.
 2. Walk it sentence by sentence. Flag each rule violation.
-3. Rewrite each flagged sentence. Keep the meaning exactly.
-4. If a rewrite would drop a number, a scope qualifier, or a safety
+3. Flag every symbol, formula variable, or abbreviation that has no
+   plain-word reading at its first appearance.
+4. Rewrite each flagged sentence. Keep the meaning exactly.
+5. If a rewrite would drop a number, a scope qualifier, or a safety
    condition, keep the longer sentence and flag the trade-off. Precision
    outranks brevity.
-5. Report the before/after table. If the text already complies, say so.
+6. Report the before/after table. If the text already complies, say so.
    Do not force changes onto compliant text.
 
 ## Output format

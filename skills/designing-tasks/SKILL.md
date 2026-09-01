@@ -45,7 +45,9 @@ You MUST create a todo for each item and complete them in order:
    right.
 6. **Write the design doc** — `docs/specs/YYYY-MM-DD-<topic>.md`, commit it.
 7. **Self-review** — placeholder scan, internal consistency, scope check,
-   ambiguity check. Fix inline; no re-review.
+   ambiguity check; if the spec carries a flow sketch, re-walk it and
+   count the files per traced call against the depth budget. Fix inline;
+   no re-review.
 8. **User review gate** — "Spec written and committed to `<path>`. Please
    review before we write the implementation plan." Wait. Make requested
    changes.
@@ -64,6 +66,12 @@ You MUST create a todo for each item and complete them in order:
   re-litigate the architecture inside a task
 - Error handling and testing approach (tests are per
   chimera:test-driven-development)
+- Flow sketch (required when the task adds or reshapes modules): a short
+  diagram that traces one input through the named functions and files to
+  the output. If tracing one call crosses more than the depth budget, the
+  spec says so and justifies each hop — or the design flattens before it
+  is presented. The depth budget comes from the project's coding rules;
+  if the project defines none, the budget is two files per traced call.
 
 **Exploration mode — research brief:**
 - Question: what are we trying to learn?
