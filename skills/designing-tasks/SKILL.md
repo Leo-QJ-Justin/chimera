@@ -33,7 +33,12 @@ You MUST create a todo for each item and complete them in order:
    relevant files, docs, recent commits. If `docs/system-design.md` exists,
    read it: which module(s) does this task touch? If `docs/prd.md` exists
    and the roadmap row's `Realizes` column names requirement IDs
-   (`FR-N`), read those requirements.
+   (`FR-N`), read those requirements — and in the design dialogue,
+   re-present each requirement's enumerated content to your human partner
+   for re-confirmation ("FR-8 names these seven metrics — still all
+   wanted?"), never cite the id as settled. Requirement lists approved
+   wholesale at genesis get item-level approval only when re-shown at
+   task time.
 2. **Determine mode** — confirm build | exploration (set at /start-task);
    it decides what Step 4 produces.
 3. **Ask clarifying questions** — one at a time, one per message; prefer
@@ -72,6 +77,9 @@ You MUST create a todo for each item and complete them in order:
   spec says so and justifies each hop — or the design flattens before it
   is presented. The depth budget comes from the project's coding rules;
   if the project defines none, the budget is two files per traced call.
+- Decisions: every judgment call the spec makes, listed as *decision /
+  rejected alternative / trigger to revisit*. A choice the reader cannot
+  find here is a choice the reader never approved.
 
 **Exploration mode — research brief:**
 - Question: what are we trying to learn?
@@ -94,6 +102,21 @@ pipeline and the dashboard and the alerting"), flag it immediately and
 split into roadmap rows — each row gets its own trip through the loop.
 Don't spend questions refining a task that needs decomposition first.
 
+## Decisions That Are the Human's Call
+
+A Decisions section records judgment calls — but recording is not
+consent. Some decisions must be asked as an explicit question (checklist
+item 3) before the spec is written, never only recorded:
+
+- Any heuristic placed in a correctness path: a fail-closed gate, a
+  value-deciding rule, an acceptance fallback. The human chooses between
+  the heuristic and the honest alternative (narrower scope, an
+  exemption, a loud failure) knowing the trade-off.
+- Any renegotiation of a requirement's stated scope.
+
+Litmus: if a reviewer could plausibly say "this cleverness does not
+belong in a correctness path," the human decides at design time.
+
 ## Design for Isolation (build mode)
 
 Break the work into units with one clear purpose each, communicating
@@ -109,6 +132,7 @@ can't change without breaking consumers, the boundaries need work.
 | "Questions slow us down" | One wrong assumption costs more than five questions. |
 | "I'll design as I implement" | That's implementation-first with narration. Design, approve, then build. |
 | "The brief can come after a quick look at the data" | The quick look IS analysis. Brief first (chimera:exploring-reproducibly). |
+| "The Decisions section records it, that's enough" | Recording is not consent. A heuristic in a correctness path is asked as a question, not filed. |
 
 ## Terminal State
 
