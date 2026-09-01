@@ -38,6 +38,7 @@ this skill.)
 | Creating or editing a skill | chimera:creating-skills |
 | Writing a genesis doc, spec, or text an agent must parse | chimera:writing-in-ste |
 | Profiling a corpus, comparing tools, analyzing logs — any many-instance investigation | chimera:writing-comparative-reports |
+| Retrospective on how chimera itself performed; turning project friction into plugin improvements | `/retrospect` |
 
 Process skills come first; they set the approach.
 
