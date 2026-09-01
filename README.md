@@ -16,11 +16,17 @@ is opt-in by entering the loop — and enforced once inside.
 
 **Two altitudes:**
 
-- **Genesis** (`/design-project`): brainstorm → PRD (app-shaped, or
-  ML-shaped via CRISP-DM phases 1-2) → architecture + tradeoffs (ADRs) →
-  system design (modules with I/O contracts) → roadmap (task backlog).
+- **Genesis** (`/design-project`): brainstorm → data-contact spike
+  (corpus profiled before design) → BIND (evidence → commitments) → PRD
+  (app-shaped, or ML-shaped via CRISP-DM phases 1-2) → architecture +
+  tradeoffs (ADRs) → system design (modules with I/O contracts) →
+  roadmap (task backlog).
 - **Loop** (`/start-task`): gate → mode → design → plan → execute → verify
   → review → finish. One roadmap row at a time.
+
+The current shape of every flow is the living map at
+[docs/process-map.md](docs/process-map.md), updated in the same commit
+as any change that alters a flow.
 
 **Two modes**, declared per task ("code we'll keep, or an answer we'll act
 on?"):
@@ -40,18 +46,26 @@ acceptance criteria. Spike code is never merged.
 
 ## Contents
 
-- **10 skills** — `using-chimera` (bootstrap, injected each session),
+- **12 skills** — `using-chimera` (bootstrap, injected each session),
   `designing-tasks`, `writing-plans`, `test-driven-development`,
   `exploring-reproducibly`, `verifying-before-done`,
   `debugging-systematically`, `finishing-a-branch`, `creating-skills`
   (skill authoring with a should-this-exist gate — replaces the external
   skill-creator plugin), `writing-in-ste` (the genesis-document register:
-  one meaning per term, active voice, short sentences)
-- **3 commands** — `/design-project`, `/start-task`, `/new-project`
-- **2 agents** — `code-reviewer` (read-only tools; confidence-gated; "zero
-  findings is a valid review"; build + exploration rubrics) and
+  one meaning per term, active voice, short sentences),
+  `writing-comparative-reports` (report contract + profile-to-brief
+  recipe for many-instance investigations), `persistent-model-discovery`
+  (grain, immutability, corrections, consumers locked into a TRD before
+  the PRD)
+- **4 commands** — `/design-project`, `/start-task`, `/new-project`,
+  `/retrospect` (the learning loop: friction events → quality gate →
+  improvement spec)
+- **3 agents** — `code-reviewer` (read-only tools; confidence-gated; "zero
+  findings is a valid review"; build + exploration rubrics),
   `eda-profiler` (mechanical first-pass dataset profiling, drafted in the
-  analysis style contract; judgment calls returned as questions)
+  analysis style contract; judgment calls returned as questions), and
+  `corpus-profiler` (its non-tabular sibling: heterogeneous corpora,
+  report regenerated from a committed script)
 - **2 hooks** — SessionStart bootstrap injection (`startup|clear|compact`);
   warn-only branch nudge on source edits on main (never blocks;
   `CHIMERA_SILENCE_NUDGE=1` to mute)
@@ -107,14 +121,15 @@ Updating an installed chimera: see
 
 `bash tests/test-branch-nudge.sh && bash tests/test-session-start.sh` for
 the hooks; [docs/testing/smoke.md](docs/testing/smoke.md) for the manual
-end-to-end matrix.
+end-to-end matrix;
+[docs/testing/pressure-scenarios/](docs/testing/pressure-scenarios/) for
+the per-change failure scenarios skill edits are walked against before
+landing.
 
 ## Roadmap
 
 - **v1.1** — RED-gate TDD hook (PreToolUse block on source edits without an
   observed failing test; exceeds what either reference enforces)
-- **v1.x** — `/learn` retro command (manual, quality-gated, modeled on
-  ECC's `/learn-eval`)
 - **v2** — language rules packs: `common/` + `python/` shipped; further
   languages when a project needs one
 
