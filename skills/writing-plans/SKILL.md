@@ -71,6 +71,13 @@ Every plan MUST start with:
 [Project-wide requirements from the spec, one line each, exact values
 verbatim. Every task's requirements implicitly include this section.]
 
+## Preconditions
+
+[Every external resource a task step needs — a credential, an endpoint,
+a dataset snapshot, a second process such as a conversion engine — with
+the one command that proves it is live NOW. "none" is a valid entry.
+/start-task Phase 4 runs these before Task 1.]
+
 ## Patterns to Mirror
 
 [The Pattern Grounding citations: category → file:line → one-line note]

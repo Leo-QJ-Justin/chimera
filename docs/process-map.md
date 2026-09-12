@@ -2,7 +2,8 @@
 
 > The current shape of the whole loop. Updated in the same commit as
 > any change that alters a flow. (Ch. N) marks the v2 change that
-> introduced an element.
+> introduced an element; (v1.10 X) marks the v1.10 improvement, A to I,
+> that introduced one.
 
 ## 1. Project genesis — /design-project
 
@@ -43,6 +44,9 @@ Phase 5  SCAFFOLD         skeleton; /new-project; commit genesis
 
 ## 2. Build-mode task — /start-task
 
+Phase 1: a row naming a parked branch re-validates its notes by
+  trial rebase before design (v1.10 E)
+   ↓
 designing-tasks:
   explore context → re-present FR contents for re-confirmation
     (Ch. 1)
@@ -54,8 +58,12 @@ designing-tasks:
    ↓
 writing-plans:
   plan carries an empty ## Deviations section (Ch. 5)
+  plan carries ## Preconditions: every external resource with the
+    one command that proves it live (v1.10 E)
    ↓
 test-driven-development (execution):
+  preconditions run BEFORE task 1; a failure stops the phase —
+    renew / reorder / split (v1.10 E)
   deviations logged in ## Deviations at the moment they are made
     (Ch. 5)
    ↓

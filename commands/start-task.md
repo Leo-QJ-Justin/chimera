@@ -41,6 +41,12 @@ The project CLAUDE.md `## Mode` line is the default; the answer here
 overrides it. Record the mode — it goes at the top of the plan file and
 shades every following phase.
 
+**Parked branch:** if the row names a branch carried over from an earlier
+row, re-validate its notes before design — add a throwaway worktree on it,
+`git rebase <base>`, list the conflicting files, abort, remove the
+worktree. Refresh the row's rebase notes with that list. A note written at
+the split describes the tree at the split; every merge since has moved it.
+
 ## Phase 2 — DESIGN
 
 Invoke chimera:designing-tasks. Output: committed spec (build) or research
@@ -56,6 +62,13 @@ stopping rule (exploration).
 
 ## Phase 4 — EXECUTE
 
+**Preconditions first.** Run every command in the plan's `## Preconditions`
+section before Task 1. A failed precondition stops the phase: renew the
+resource, reorder the plan so the tasks that need it come last, or split
+them into a later roadmap row — before any task starts. A probe that sits
+inside the task that needs it is found dead with every earlier task already
+committed.
+
 Work the plan inline, one todo per plan task, following:
 - Build → chimera:test-driven-development
 - Exploration → chimera:exploring-reproducibly
@@ -63,7 +76,8 @@ Work the plan inline, one todo per plan task, following:
 **Circuit breaker:** the same error persisting after 3 fix attempts, or a
 fix introducing more errors than it resolves → STOP and ask your human
 partner (see chimera:debugging-systematically for the architecture
-question).
+question). This fires on a failure *during* execution; the precondition
+stop above fires before it, on a dependency that is already dead.
 
 **Early exit (exploration):** stopping rule reached → record the no-signal
 result in the findings doc and jump to Phase 5.
