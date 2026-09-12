@@ -292,6 +292,14 @@ every session opens with: what is blocking, and what can run now.
 breakdowns — each row later gets its own `/start-task` run with full
 discipline. Reorderable; outcomes insert and remove rows.
 
+A row states the question or deliverable, the decision it settles, its
+mode, and its dependencies. It does **not** prescribe the method, the
+comparator, the metric shape, or the file layout: those are the design
+phase's to propose and your human partner's to approve. A row that
+carries a method is a spec that skipped its approval gate. Where a
+hand-off or an earlier session holds a proposal, the row cites the note
+that holds it as an input, and the design phase weighs it.
+
 ## Phase 5 — SCAFFOLD
 
 **ML/data and hybrid projects:** scaffold from the ML Pipelines skeleton

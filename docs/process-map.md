@@ -40,6 +40,8 @@ Phase 2  ARCHITECTURE     ADRs; one-line Tier-1 ADR points at the
 Phase 3  SYSTEM DESIGN    preamble states grain / immutability /
                           consumers per the TRD, verbatim (Ch. 8, 11)
 Phase 4  ROADMAP          queue of rows; gate rows; Realizes column
+                          a row names its outcome, never its method;
+                          a held proposal is a cited note (v1.10 F)
 Phase 5  SCAFFOLD         skeleton; /new-project; commit genesis
 
 ## 2. Build-mode task — /start-task
