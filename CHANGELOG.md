@@ -4,6 +4,93 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.10.0] - 2026-09-12
+
+Nine improvements from the 2026-09-09/10/11 field retrospectives. The
+source proposed fourteen changes; four were one principle instrumented at
+four lifecycle points and three were a second principle, so they
+consolidate to nine. Spec:
+`docs/specs/2026-09-12-v1.10-improvements.md`. Two organizing principles:
+**prose is not reviewable, cases are** — a rule, a form or a shape is
+approved against concrete instances; and **a claim in a spec names what
+makes it true** — an instance citation, or a named validator.
+
+No new skill, no new command, no new mandatory phase, no new artifact a
+project must produce. Every improvement edits a file that already runs.
+
+### Added
+- `skills/finishing-a-branch/post-loop-paths.md` — the exception paths
+  (Amendment, **Split**, discard confirmation, **Step 0b dispositions**,
+  the option table), split out of a skill that was 210 lines against its
+  own 200-line budget. The main body lands at 199.
+- `skills/finishing-a-branch` **Step 0b**, between the review gate and
+  the suite run: every Decisions entry is marked task-local or rewritten
+  in place into the living document that governs it; a decision changing
+  an established convention gives every artifact encoding the old answer
+  a disposition — moves now, or gets a roadmap row. The menu comes after.
+- `skills/writing-plans` **`## Preconditions`** in the plan header, and
+  `/start-task` Phase 4 runs them before Task 1. A failed precondition
+  stops the phase so the plan is reordered while that is free.
+- `skills/persistent-model-discovery` **question 7, Acceptance**: what an
+  absence does, to which unit (the smallest the consumer joins on), and
+  whether the source can supply the value at all.
+- `agents/code-reviewer` **mutation check** (conditional experiment,
+  revisit after ten build reviews): coverage of new behavior is proven by
+  reducing it to identity on a scratch copy and reporting the tests that
+  turn red, with an inconclusive guard for editable installs.
+- `docs/testing/pressure-scenarios/README.md` — index and walk
+  instructions; `change-14` to `change-22` are the nine new scenarios.
+
+### Changed
+- `designing-tasks`: new section **Approve Against Cases, Not Prose** — a
+  rule is shown as 3+ traced inputs, a bulk artifact is produced one unit
+  first and ruled on; an accepted correctness-path heuristic names a
+  concrete input it gets wrong. Self-review gains the **instance check**
+  and the **enforcement check**. The Interfaces bullet is corrected —
+  **a type is not a form**. Behavior and Method bullets require every
+  aggregate to ship the failing instances behind it, under a stated cap.
+  Decisions entries gain a fourth field, *supersedes*.
+- `writing-plans`: forms in the per-task Interfaces block; bulk artifacts
+  split at one unit in Task Right-Sizing; form words added to No
+  Placeholders.
+- `verifying-before-done`: an aggregate whose instances cannot be listed
+  is not verified.
+- `/design-project` + `/start-task`: a roadmap row names its outcome, not
+  its method — sharpening the existing "queue, not a plan" rule, which a
+  named comparator passed. The PRD self-check and both PRD templates
+  define "required"/"essential"/"mandatory" as exactly the values whose
+  absence stops acceptance.
+- `writing-comparative-reports`: Part 2 admits surveys of outside
+  solutions, which have no profile to be fed from; a survey adopts a
+  mechanism only through a cited instance from this project's own
+  evidence, and carries a required ruled-out section.
+- `finishing-a-branch` Amendment path widens from "every document" to
+  "every artifact that encodes the amended behavior" — fixtures,
+  labelled data, tests, prompts, generated configuration.
+- `docs/testing/smoke.md`: section 0 validates `marketplace.json`, checks
+  that the two version files agree, and audits skill line budgets; the
+  user-agnostic grep now scans `docs/testing` and `docs/specs`, where
+  project detail actually leaks in.
+- `.claude-plugin/marketplace.json` version corrected from `1.8.1` — it
+  had drifted a release behind `plugin.json`, which nothing checked.
+
+### Deferred
+- A `writing-technical-documentation` skill → **a second documentation
+  task on a materially different toolchain.** Its three general moves are
+  absorbed into improvements A, B and D; the remainder names one
+  toolchain and one page shape.
+- A prior-art survey phase at genesis → **two of the next three genesis
+  runs producing a commitment, with a cited instance, that the brainstorm
+  missed.** The method already exists and is already routed; only the
+  guard shipped.
+- Document status markers → **improvement D's fold proving insufficient
+  after one full project.**
+
+Known budget breaches, untouched and recorded: `test-driven-development`
+(242 lines against 200) and `using-chimera` (456 words against 150, and
+injected verbatim into every session). This release applies a
+touched-files gate.
+
 ## [1.9.0] - 2026-09-01
 
 Thirteen changes from the first full-project retrospective (a pipeline

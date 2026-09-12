@@ -55,13 +55,14 @@ acceptance criteria. Spike code is never merged.
   one meaning per term, active voice, short sentences),
   `writing-comparative-reports` (report contract + profile-to-brief
   recipe for many-instance investigations), `persistent-model-discovery`
-  (grain, immutability, corrections, consumers locked into a TRD before
-  the PRD)
+  (grain, immutability, corrections, consumers, acceptance locked into a
+  TRD before the PRD)
 - **4 commands** — `/design-project`, `/start-task`, `/new-project`,
   `/retrospect` (the learning loop: friction events → quality gate →
   improvement spec)
-- **3 agents** — `code-reviewer` (read-only tools; confidence-gated; "zero
-  findings is a valid review"; build + exploration rubrics),
+- **3 agents** — `code-reviewer` (read-only on the working tree;
+  confidence-gated; "zero findings is a valid review"; build + exploration
+  rubrics; proves new-behavior coverage by an executed mutation),
   `eda-profiler` (mechanical first-pass dataset profiling, drafted in the
   analysis style contract; judgment calls returned as questions), and
   `corpus-profiler` (its non-tabular sibling: heterogeneous corpora,

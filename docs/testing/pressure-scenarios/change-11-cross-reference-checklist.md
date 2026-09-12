@@ -42,7 +42,7 @@ TRD verbatim, module names match the PRD Terms table.
    documents; another checklist pass feels like re-reading finished
    work.
 2. **Local-change blindness (sunk cost):** the rewording was approved
-   in conversation, so it feels already handled — the cost of
+   in the design dialogue, so it feels already handled — the cost of
    re-walking its citations is paid by documents that "didn't change."
 
 ## Walk result

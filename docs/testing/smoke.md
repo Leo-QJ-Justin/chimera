@@ -1,4 +1,4 @@
-# chimera v1.0 — Manual smoke test matrix
+# chimera — Manual smoke test matrix
 
 Run after every version bump, before pushing to the marketplace.
 Estimated time: ~20 minutes (scripted checks ~1 minute; manual flows the
@@ -9,11 +9,18 @@ rest).
 ```bash
 bash tests/test-branch-nudge.sh      # 7 cases, all PASS
 bash tests/test-session-start.sh     # JSON shape PASS
-python3 -c "import json;json.load(open('hooks/hooks.json'));json.load(open('.claude-plugin/plugin.json'));print('OK')"
+python3 -c "import json;[json.load(open(f)) for f in ['hooks/hooks.json','.claude-plugin/plugin.json','.claude-plugin/marketplace.json']];print('OK')"
+# the two version files must agree (they silently drifted once)
+python3 -c "import json;a=json.load(open('.claude-plugin/plugin.json'))['version'];b=json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'];assert a==b,(a,b);print('version OK',a)"
+# skill line budgets (creating-skills: frequently loaded < 200 lines).
+# Known pre-existing breach, not a regression: test-driven-development
+# (242). Anything else listed is new and must be split or trimmed.
+for f in skills/*/SKILL.md; do n=$(wc -l < "$f"); [ "$n" -ge 200 ] && echo "OVER-200 $f $n"; done
 # user-agnostic guard: no personal names or conversation references in
 # operational surfaces (author metadata in manifests is the only allowed
-# personal reference)
-! grep -rn "Leo\b\|in conversation" skills commands agents templates README.md CHANGELOG.md | grep -v "Leo-QJ"
+# personal reference). docs/ is scanned too - scenarios and specs are
+# written from real projects and are where project detail leaks in.
+! grep -rn "Leo\b\|in conversation" skills commands agents templates docs/testing docs/specs README.md CHANGELOG.md | grep -v "Leo-QJ"
 ```
 
 ## 1. Bootstrap injection
@@ -44,17 +51,22 @@ existing CLAUDE.md.
 Task: "add a slugify function". Expect, in order: branch created off main
 (Phase 0); mode question answered `build` (Phase 1); spec written to
 `docs/specs/` and approval requested (Phase 2); plan in `plans/` gitignored
-(Phase 3); TDD cycle visibly RED→GREEN (failing test run shown before
-implementation) (Phase 4); fresh verification run (Phase 5); review-gate
-dispatch + 3-option menu (Phase 6).
+(Phase 3) carrying a `## Preconditions` section (or "none") and an empty
+`## Deviations`; preconditions run before task 1 (Phase 4); TDD cycle
+visibly RED→GREEN (failing test run shown before implementation) (Phase
+4); fresh verification run (Phase 5); review-gate dispatch reporting a
+mutation and the tests it turned red, then Step 0b walking the spec's
+Decisions entries to a home, then the 3-option menu (Phase 6).
 
 ## 5. `/start-task` — exploration mode (throwaway repo with a CSV)
 
 Task: "is column A correlated with column B?". Expect: research brief with
 the "what result would change what decision" line; experiment plan with a
 stopping rule; notebook under `notebooks/` naming the pinned snapshot;
-findings doc in `docs/findings/` ending with a `Decision:` line; clean
-rerun before numbers are reported; methodology review at finish.
+findings doc in `docs/findings/` ending with a `Decision:` line; any
+aggregate reported together with the differing instances behind it under
+a stated cap; clean rerun before numbers are reported; methodology review
+at finish.
 
 ## 6. `/design-project` (conversation only, no scaffold needed)
 
@@ -67,7 +79,8 @@ self-check run before the approval gate → architecture tradeoffs recorded
 as ADRs with status, tier, reversal-cost, and confidence lines, with the
 confidence tags not all reading `[High]` → system-design module table
 with a mermaid data flow and a risk table whose rows carry detection
-signals → roadmap table with modes, a `Realizes` column whose IDs resolve
+signals → roadmap table whose rows name outcomes rather than methods,
+with modes, a `Realizes` column whose IDs resolve
 to PRD requirements, at least one gate row, and the critical-path and
 parallel footer notes → offer to scaffold. Abort before scaffold; confirm
 all four docs exist and are committed.
