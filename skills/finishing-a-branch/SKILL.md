@@ -108,7 +108,8 @@ Which option?
 ```
 
 Present the menu exactly as written. Discarding work happens ONLY in
-response to your human partner explicitly asking for it (below). Wait for
+response to your human partner explicitly asking for it (see
+[post-loop-paths.md](post-loop-paths.md)). Wait for
 their answer; the integration decision is theirs.
 
 ## Step 5: Execute Choice
@@ -151,29 +152,9 @@ Report: "Keeping branch <name>. Worktree preserved at <path>."
 
 ### If your human partner asks to discard the work
 
-Only as a response to an explicit request. Confirm first:
-
-```
-This will permanently delete:
-- Branch <name>
-- All commits: <commit-list>
-- Worktree at <path>
-
-Type 'discard' to confirm.
-```
-
-Wait for that exact word. Then cd to MAIN_ROOT, clean up (Step 6), and
-`git branch -D <branch>`.
-
-## Amendment path
-
-For post-merge scope corrections: a small behavior change to
-already-integrated work, requested after the loop closed. No spec, no
-plan. Requirements: (a) tests move with the change; (b) every document
-that states the amended behavior — spec, PRD, system design — moves in
-the same commit; a requirement label that no longer matches shipped
-behavior is stale. Micro-branch optional; full test suite before the
-merge or commit, as always.
+Only as a response to an explicit request. The confirmation
+wording and the exact word required are in
+[post-loop-paths.md](post-loop-paths.md).
 
 ## Step 6: Cleanup Workspace
 
@@ -187,12 +168,9 @@ the worktree. Uses the Step 2 values captured before any cd.
 
 ## Quick Reference
 
-| Option | Merge | Push | Keep Worktree | Cleanup Branch |
-|--------|-------|------|---------------|----------------|
-| 1. Merge locally | yes | - | - | yes |
-| 2. Create PR | - | yes | yes | - |
-| 3. Keep as-is | - | - | yes | - |
-| Discard (explicit request only) | - | - | - | yes (force) |
+The option/merge/push/worktree/cleanup table is in
+[post-loop-paths.md](post-loop-paths.md), beside the
+Amendment and Split paths.
 
 ## Common Rationalizations
 

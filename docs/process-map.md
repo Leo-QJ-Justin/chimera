@@ -108,7 +108,8 @@ finishing-a-branch: findings merge; experiment code archived
 ## 4. After the loop closes
 
 Small behavior change to already-merged work
-   → Amendment path in finishing-a-branch (Ch. 4), routed from
+   → Amendment path in finishing-a-branch/post-loop-paths.md
+     (Ch. 4), routed from
      using-chimera: no spec, no plan; tests move with the change;
      every doc stating the amended behavior moves in the same commit
 

@@ -1,7 +1,9 @@
 # Change 4 — finishing-a-branch: amendment path, and a route to it
 
 **Edited skills:** `skills/finishing-a-branch/SKILL.md`,
-`skills/using-chimera/SKILL.md`
+`skills/using-chimera/SKILL.md`. The path itself now lives in
+`skills/finishing-a-branch/post-loop-paths.md`; the routing row points
+there.
 **Failure form:** omitted element → named path + routing row (a path
 nothing routes to is documentation, not process).
 

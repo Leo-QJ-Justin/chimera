@@ -34,7 +34,7 @@ this skill.)
 | Bug, test failure, unexpected behavior | chimera:debugging-systematically |
 | About to claim done / fixed / passing | chimera:verifying-before-done |
 | Work complete, deciding integration | chimera:finishing-a-branch |
-| Small behavior change to already-merged work | chimera:finishing-a-branch (Amendment path) |
+| Small behavior change to already-merged work | chimera:finishing-a-branch (Amendment path, in post-loop-paths.md) |
 | Creating or editing a skill | chimera:creating-skills |
 | Writing a genesis doc, spec, or text an agent must parse | chimera:writing-in-ste |
 | Profiling a corpus, comparing tools, analyzing logs — any many-instance investigation | chimera:writing-comparative-reports |
