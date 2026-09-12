@@ -43,8 +43,8 @@ You MUST create a todo for each item and complete them in order:
      "every Z carries W" is a claim, not context. Check it against the
      pinned data and cite the instances that support it, or the one
      that breaks it. A premise resting on a fact outside the repository
-     — a standard, a code scheme, a third party's behaviour — is
-     verified against that authority and the check recorded first.
+     — a standard, a code scheme, a third party — is verified against
+     that authority and the check recorded first.
 2. **Determine mode** — confirm build | exploration (set at /start-task);
    it decides what Step 4 produces.
 3. **Ask clarifying questions** — one at a time, one per message; prefer
@@ -97,8 +97,7 @@ You MUST create a todo for each item and complete them in order:
   is a form. This binds anything a later task compares against or
   stores — fixtures, expected outputs, config values, stored columns,
   labelled data.
-- Error handling and testing approach (tests are per
-  chimera:test-driven-development)
+- Error handling and testing approach (per chimera:test-driven-development)
 - Flow sketch (required when the task adds or reshapes modules): a short
   diagram that traces one input through the named functions and files to
   the output. If tracing one call crosses more than the depth budget, the
@@ -106,8 +105,10 @@ You MUST create a todo for each item and complete them in order:
   is presented. The depth budget comes from the project's coding rules;
   if the project defines none, the budget is two files per traced call.
 - Decisions: every judgment call the spec makes, listed as *decision /
-  rejected alternative / trigger to revisit*. A choice the reader cannot
-  find here is a choice the reader never approved.
+  rejected alternative / trigger to revisit / supersedes*. A choice the
+  reader cannot find here is a choice the reader never approved.
+  *Supersedes* names what this decision replaces, or "none";
+  finishing-a-branch Step 0b reads it.
 
 **Exploration mode — research brief:**
 - Question: what are we trying to learn?

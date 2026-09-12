@@ -10,10 +10,13 @@ description: Use when a task's implementation or analysis is complete and verifi
 
 ## Overview
 
-**Core principle:** Review → verify tests → detect environment → present
-options → execute choice → clean up.
+**Core principle:** Review → fold decisions → verify tests → detect
+environment → present options → execute choice → clean up.
 
 **Announce at start:** "I'm using the finishing-a-branch skill to complete this work."
+
+Exception paths (Amendment, Split, discard, Step 0b dispositions, the
+option table): [post-loop-paths.md](post-loop-paths.md).
 
 ## Step 0: Review Gate
 
@@ -38,6 +41,21 @@ decision line present).
 implementing; push back with evidence when the reviewer is wrong. Never
 implement blindly; never respond with performative agreement — "You're
 absolutely right!" is banned; state the fix or the counter-evidence.
+
+## Step 0b: Fold Decisions Into the Living Documents
+
+The spec is history once the task merges, and Step 0's fixes have
+settled the decisions. Walk the spec's Decisions section now, before
+the suite run, so the suite still covers the tree that merges.
+
+Mark each entry **task-local**, or write it into the living document
+that governs it (system design, TRD, data model, project CLAUDE.md,
+prompt contract) as the current statement and its reason, rewritten in
+place — the spec's entry records what it replaced, so living documents
+carry no amendment chains. A decision that changes an established
+convention also names every artifact encoding the previous answer, each
+with a disposition ([post-loop-paths.md](post-loop-paths.md)). The menu
+comes only after every decision has a home.
 
 ## Step 1: Verify Tests
 
@@ -108,9 +126,8 @@ Which option?
 ```
 
 Present the menu exactly as written. Discarding work happens ONLY in
-response to your human partner explicitly asking for it (see
-[post-loop-paths.md](post-loop-paths.md)). Wait for
-their answer; the integration decision is theirs.
+response to your human partner explicitly asking for it. Wait for their
+answer; the integration decision is theirs.
 
 ## Step 5: Execute Choice
 
@@ -152,9 +169,8 @@ Report: "Keeping branch <name>. Worktree preserved at <path>."
 
 ### If your human partner asks to discard the work
 
-Only as a response to an explicit request. The confirmation
-wording and the exact word required are in
-[post-loop-paths.md](post-loop-paths.md).
+Only on an explicit request; wording and the required word are in the
+sibling file.
 
 ## Step 6: Cleanup Workspace
 
@@ -165,12 +181,6 @@ the worktree. Uses the Step 2 values captured before any cd.
 - `WORKTREE_PATH` under `.worktrees/` or `worktrees/`: chimera created it —
   `git worktree remove "$WORKTREE_PATH" && git worktree prune`
 - Otherwise: the host environment owns the workspace — leave it in place.
-
-## Quick Reference
-
-The option/merge/push/worktree/cleanup table is in
-[post-loop-paths.md](post-loop-paths.md), beside the
-Amendment and Split paths.
 
 ## Common Rationalizations
 
@@ -186,3 +196,4 @@ Amendment and Split paths.
 | "The merged-result failure is probably flaky" | A failing merged result stops everything. Branch and worktree stay put while you investigate. |
 | "The base branch is obviously main" | Confirm the fork point or ask. Wrong-base merges are expensive to undo. |
 | "The notebook should ship with the pipeline" | Experiment code is archived, not merged as production. Promotion is a new build-mode task. |
+| "Every decision here is task-local" | Then Step 0b costs 30 seconds. Say it per entry; a blanket answer is the one that leaves fixtures holding a superseded convention. |

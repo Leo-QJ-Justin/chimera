@@ -87,6 +87,9 @@ verifying-before-done
 finishing-a-branch:
   code-reviewer briefed with spec + plan constraints + the
     deviations list framed as questions (Ch. 5)
+  → Step 0b: every Decisions entry marked task-local or written
+    into its living document; a convention change gives every
+    artifact holding the old answer a disposition (v1.10 D)
   → green suite → menu (merge / PR / keep)
 
 ## 3. Exploration-mode task — /start-task
@@ -111,7 +114,13 @@ Small behavior change to already-merged work
    → Amendment path in finishing-a-branch/post-loop-paths.md
      (Ch. 4), routed from
      using-chimera: no spec, no plan; tests move with the change;
-     every doc stating the amended behavior moves in the same commit
+     every ARTIFACT encoding the amended behavior moves in the same
+     commit — docs, fixtures, labelled data, tests, prompts (v1.10 D)
+
+Part of a task moves to a later row
+   → Split path in finishing-a-branch/post-loop-paths.md: a named
+     branch, never a stash; named in the inheriting row, the
+     hand-off, and an execution amendment (v1.10 E)
 
 ## 5. The learning loop (chimera improving chimera)
 

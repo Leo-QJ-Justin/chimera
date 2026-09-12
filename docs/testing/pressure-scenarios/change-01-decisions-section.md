@@ -24,7 +24,9 @@ explicitly was the only one that never needed later surgery.
 ## Pass condition
 
 The spec carries a Decisions section: every judgment call listed as
-*decision / rejected alternative / trigger to revisit*. When the task
+*decision / rejected alternative / trigger to revisit / supersedes*
+(the fourth field added by v1.10 improvement D, naming what this
+decision replaces or "none"). When the task
 realizes an FR, the design dialogue re-presents the requirement's
 enumerated content for re-confirmation ("FR-8 names these seven
 metrics — still all wanted?") instead of citing the id as settled.

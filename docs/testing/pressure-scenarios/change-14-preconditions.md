@@ -42,14 +42,20 @@ the hand-off, and an execution amendment to the current spec. A row
 that names a parked branch re-validates its notes by trial rebase
 before design, because every merge since the split has moved the tree.
 
-## Pressure (two stacked)
+## Pressure (three stacked)
 
 1. **Topical correctness:** the probe command genuinely belongs to
    Task 7 — that is the task that uses it. Hoisting it to the top of
    the phase looks like misfiling. "It is already in the plan, in the
    right place."
 
-2. **Cost asymmetry at the moment of choice:** running five commands
+2. **The stash is right there:** when the split does happen, `git
+   stash` is one word and the work is safely off the tree. Naming a
+   branch, a roadmap row, a hand-off entry and a spec amendment is
+   four artifacts for work that "will be picked up next session
+   anyway".
+
+3. **Cost asymmetry at the moment of choice:** running five commands
    that will obviously pass, before any real work, reads as pure
    ceremony. Six of the seven probes have never failed. The expected
    value of skipping feels positive on every individual run.
