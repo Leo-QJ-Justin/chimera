@@ -53,7 +53,10 @@ designing-tasks:
   explore context → re-present FR contents for re-confirmation
     (Ch. 1)
   clarifying questions → correctness-path heuristics and scope
-    renegotiations are ASKED, never only recorded (Ch. 7)
+    renegotiations are ASKED, never only recorded (Ch. 7); an
+    accepted heuristic names an input it gets wrong (v1.10 A)
+  a rule is presented as 3+ traced cases; a bulk artifact is
+    produced one unit first and ruled on (v1.10 A)
   spec carries: Decisions section (Ch. 1) + flow sketch against the
     depth budget (Ch. 6)
   interfaces state the FORM of each value, not only its type;

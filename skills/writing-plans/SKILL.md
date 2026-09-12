@@ -140,6 +140,14 @@ and is worth a fresh reviewer's gate. Fold setup, config, and docs into the
 task whose deliverable needs them; split only where a reviewer could reject
 one task while approving its neighbor. Each step is one action (2-5 min).
 
+**Bulk artifacts split at one unit.** Where a task produces many units of
+one kind — fixtures, migrations, generated configuration, labelled data,
+generated pages — the first unit is its own task: produce it, list every
+judgment call it forced that the interface did not cover, and get a ruling
+before the rest are produced. This meets the criterion above rather than
+bending it: a reviewer genuinely could approve the first unit's rulings and
+reject the batch built on them.
+
 ## No Placeholders
 
 These are **plan failures** — never write them:

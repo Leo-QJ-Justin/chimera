@@ -44,8 +44,7 @@ You MUST create a todo for each item and complete them in order:
      pinned data and cite the instances that support it, or the one
      that breaks it. A premise resting on a fact outside the repository
      — a standard, a code scheme, a third party's behaviour — is
-     verified against that authority and the check recorded, before any
-     ruling rests on it.
+     verified against that authority and the check recorded first.
 2. **Determine mode** — confirm build | exploration (set at /start-task);
    it decides what Step 4 produces.
 3. **Ask clarifying questions** — one at a time, one per message; prefer
@@ -54,7 +53,8 @@ You MUST create a todo for each item and complete them in order:
    recommendation and reasoning. YAGNI ruthlessly.
 5. **Present the design** — in sections scaled to complexity (a few
    sentences to ~200 words each); ask after each section whether it looks
-   right.
+   right. Where the design defines a rule, present it per *Approve
+   Against Cases, Not Prose* below.
 6. **Write the design doc** — `docs/specs/YYYY-MM-DD-<topic>.md`, commit it.
 7. **Self-review** — placeholder scan, internal consistency, scope check,
    ambiguity check; if the spec carries a flow sketch, re-walk it and
@@ -84,21 +84,19 @@ You MUST create a todo for each item and complete them in order:
   when* lines are the acceptance criteria, to be satisfied or explicitly
   renegotiated, never quietly dropped. Without a PRD, state behavior
   directly as before. Any aggregate the spec defines — a rate, a score,
-  a count of failures — is delivered together with the instances behind
-  it: the failing or differing ones, each with its identity, the
-  expected value, the observed value and the verdict, bounded by a
-  stated cap, written by the same code that computes the aggregate.
-  When an aggregate is first shown to your human partner, the failures
-  are shown with it. Only instances can be checked; a summary cannot.
+  a failure count — ships with the instances behind it: the failing or
+  differing ones, each with identity, expected, observed and verdict,
+  bounded by a stated cap, emitted by the code that computes the
+  aggregate. Only instances can be checked; a summary cannot.
 - Interfaces: exact inputs/outputs; if `docs/system-design.md` exists, name
   the module(s) touched and write against their I/O contracts — never
   re-litigate the architecture inside a task. **A type is not a form:**
-  for each value the interface carries, state the one spelling or
-  representation it takes, with two or three inputs that map to it, and
-  the source rule where several places can supply it. `str` is a type;
-  "lowercase ISO-639-1, taken from the request header" is a form. This binds
-  anything a later task compares against or stores — fixtures, expected
-  outputs, configuration values, stored columns, labelled data.
+  for each value, state the one spelling it takes, two or three inputs
+  that map to it, and the source rule where several places can supply
+  it. `str` is a type; "lowercase ISO-639-1, from the request header"
+  is a form. This binds anything a later task compares against or
+  stores — fixtures, expected outputs, config values, stored columns,
+  labelled data.
 - Error handling and testing approach (tests are per
   chimera:test-driven-development)
 - Flow sketch (required when the task adds or reshapes modules): a short
@@ -145,11 +143,34 @@ item 3) before the spec is written, never only recorded:
 - Any heuristic placed in a correctness path: a fail-closed gate, a
   value-deciding rule, an acceptance fallback. The human chooses between
   the heuristic and the honest alternative (narrower scope, an
-  exemption, a loud failure) knowing the trade-off.
+  exemption, a loud failure) knowing the trade-off. Where the heuristic
+  is accepted with a trigger to revisit, the Decisions entry names at
+  least one concrete input it gets wrong, found by probing it with
+  inputs from outside the sample. "A wrong case found in review" is not
+  a trigger; an enumerated input is. Your human partner decides with
+  the wrong case in front of them, or the entry is not complete.
 - Any renegotiation of a requirement's stated scope.
 
 Litmus: if a reviewer could plausibly say "this cleverness does not
 belong in a correctness path," the human decides at design time.
+
+## Approve Against Cases, Not Prose
+
+A rule described in words is approved by a reader who cannot run it.
+Two forms, both before the spec is written:
+
+- **A rule is presented as a worked example.** A comparator, matcher,
+  ranker, canonical function, parser or ordering is shown as three or
+  more real inputs traced step by step to their outputs, in a table,
+  before or instead of a prose description. If your human partner asks
+  "show me with an example", the prose has already failed.
+- **A bulk artifact is produced one unit first.** Where a task produces
+  many units of one kind — fixtures, migrations, generated
+  configuration, labelled data, generated pages — produce one. List
+  every judgment call that unit forced which the interface did not
+  cover. Your human partner rules on each. Only then are the remaining
+  units produced. Eighteen units drafted in a day hide eighteen
+  applications of a choice nobody saw once.
 
 ## Design for Isolation (build mode)
 
@@ -167,6 +188,8 @@ can't change without breaking consumers, the boundaries need work.
 | "I'll design as I implement" | That's implementation-first with narration. Design, approve, then build. |
 | "The brief can come after a quick look at the data" | The quick look IS analysis. Brief first (chimera:exploring-reproducibly). |
 | "The Decisions section records it, that's enough" | Recording is not consent. A heuristic in a correctness path is asked as a question, not filed. |
+| "The spec describes the rule clearly" | A rule is understood through its cases. Show three real inputs traced to their outputs. |
+| "It's the same judgment 18 times, just do them all" | Then one unit costs nothing and surfaces every choice before it is applied 18 times. |
 
 ## Terminal State
 
