@@ -39,6 +39,13 @@ You MUST create a todo for each item and complete them in order:
    wanted?"), never cite the id as settled. Requirement lists approved
    wholesale at genesis get item-level approval only when re-shown at
    task time.
+   - **Check every premise about the data.** "X never prints Y",
+     "every Z carries W" is a claim, not context. Check it against the
+     pinned data and cite the instances that support it, or the one
+     that breaks it. A premise resting on a fact outside the repository
+     — a standard, a code scheme, a third party's behaviour — is
+     verified against that authority and the check recorded, before any
+     ruling rests on it.
 2. **Determine mode** — confirm build | exploration (set at /start-task);
    it decides what Step 4 produces.
 3. **Ask clarifying questions** — one at a time, one per message; prefer
@@ -51,8 +58,19 @@ You MUST create a todo for each item and complete them in order:
 6. **Write the design doc** — `docs/specs/YYYY-MM-DD-<topic>.md`, commit it.
 7. **Self-review** — placeholder scan, internal consistency, scope check,
    ambiguity check; if the spec carries a flow sketch, re-walk it and
-   count the files per traced call against the depth budget. Fix inline;
-   no re-review.
+   count the files per traced call against the depth budget. Two more
+   passes, both mechanical:
+   - **Instance check:** every statement of the form "the data does /
+     never does" carries an instance citation — file, section, page, or
+     a count over the pinned set. One without is a placeholder.
+   - **Enforcement check:** every sentence of the form "X cannot
+     happen", "X addresses no unit", "X is never emitted" names the
+     validator that refuses X or the test that proves X absent. A
+     stated impossibility with no enforcement is a hope: enforce it in
+     the contract, or move it to Decisions with the trigger that would
+     make it false.
+
+   Fix inline; no re-review.
 8. **User review gate** — "Spec written and committed to `<path>`. Please
    review before we write the implementation plan." Wait. Make requested
    changes.

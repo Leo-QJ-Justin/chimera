@@ -147,6 +147,8 @@ These are **plan failures** — never write them:
 - "Similar to Task N" (repeat the code — tasks may be read out of order)
 - Steps that describe without showing (code blocks required for code steps)
 - References to types, functions, or metrics not defined in any task
+- A form word with no rule beside it: "normalized", "canonical",
+  "cleaned", "standard" — each names a decision nobody has made
 - An experiment plan with no stopping rule
 
 ## Self-Review
