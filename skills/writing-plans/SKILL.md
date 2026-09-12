@@ -106,7 +106,9 @@ reviewer as questions.]
 **Interfaces:**
 - Consumes: [what this task uses from earlier tasks — exact signatures]
 - Produces: [what later tasks rely on — exact names, parameter and return
-  types. The implementer sees only their own task; this block is how they
+  types, and the FORM of each value: the one spelling it takes, with the
+  source rule where several places can supply it. A type is not a form,
+  and the implementer sees only their own task; this block is how they
   learn what neighboring tasks expect.]
 
 - [ ] **Step 1: Write the failing test**

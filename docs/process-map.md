@@ -56,6 +56,8 @@ designing-tasks:
     renegotiations are ASKED, never only recorded (Ch. 7)
   spec carries: Decisions section (Ch. 1) + flow sketch against the
     depth budget (Ch. 6)
+  interfaces state the FORM of each value, not only its type;
+    every aggregate ships the instances behind it (v1.10 C)
   STE register; notation defined at first use (Ch. 3)
    ↓
 writing-plans:
@@ -85,6 +87,8 @@ exploring-reproducibly:
   corpus-profiler (heterogeneous corpus) (Ch. 2)
   findings doc closes with Decision + Constraint + Implications on
   every adopt, or "no design consequence" (Ch. 9)
+  an aggregate whose instances cannot be listed is not verified
+    (v1.10 C)
    ↓
 code-reviewer (exploration rubric, checks the closure) (Ch. 9)
    ↓

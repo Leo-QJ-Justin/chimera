@@ -83,10 +83,22 @@ You MUST create a todo for each item and complete them in order:
   names requirements, say which `FR-N` the spec realizes: their *Done
   when* lines are the acceptance criteria, to be satisfied or explicitly
   renegotiated, never quietly dropped. Without a PRD, state behavior
-  directly as before.
+  directly as before. Any aggregate the spec defines — a rate, a score,
+  a count of failures — is delivered together with the instances behind
+  it: the failing or differing ones, each with its identity, the
+  expected value, the observed value and the verdict, bounded by a
+  stated cap, written by the same code that computes the aggregate.
+  When an aggregate is first shown to your human partner, the failures
+  are shown with it. Only instances can be checked; a summary cannot.
 - Interfaces: exact inputs/outputs; if `docs/system-design.md` exists, name
   the module(s) touched and write against their I/O contracts — never
-  re-litigate the architecture inside a task
+  re-litigate the architecture inside a task. **A type is not a form:**
+  for each value the interface carries, state the one spelling or
+  representation it takes, with two or three inputs that map to it, and
+  the source rule where several places can supply it. `str` is a type;
+  "lowercase ISO-639-1, taken from the request header" is a form. This binds
+  anything a later task compares against or stores — fixtures, expected
+  outputs, configuration values, stored columns, labelled data.
 - Error handling and testing approach (tests are per
   chimera:test-driven-development)
 - Flow sketch (required when the task adds or reshapes modules): a short
@@ -105,7 +117,11 @@ You MUST create a todo for each item and complete them in order:
 - Data: which sources, which snapshot will be pinned
 - Method: how we'll test the hypothesis; evaluation metric and guard
   metric (inherit both from `docs/prd.md` if present). A brief cites no
-  FRs — exploration answers a question, it does not deliver a capability
+  FRs — exploration answers a question, it does not deliver a capability.
+  Every aggregate the method reports ships with the instances behind it:
+  the failing or differing ones, with identity, expected, observed and
+  verdict, bounded by a stated cap, emitted by the code that computes
+  the aggregate
 - **Decision line (mandatory): "What result would change what decision?"**
   A brief without this line is incomplete — it is the single guard between
   research and wandering.

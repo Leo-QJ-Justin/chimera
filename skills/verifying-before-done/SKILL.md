@@ -48,7 +48,7 @@ Skip any step = lying, not verifying
 | Regression test works | Red-green cycle verified | Test passes once |
 | Agent completed | VCS diff shows changes | Agent reports "success" |
 | Requirements met | Line-by-line checklist, from the realized `FR-N` *Done when* lines when a PRD exists | Tests passing |
-| "The analysis shows X" | Clean rerun reproduces the numbers | Numbers remembered from an earlier run |
+| "The analysis shows X" | Clean rerun reproduces the numbers, and the instances behind any aggregate can be listed | Numbers remembered from an earlier run; an aggregate with no listing |
 
 ## Exploration Mode
 
@@ -58,6 +58,11 @@ X" or recording a number in the findings doc as final:
   snapshot with the recorded seed.
 - The rerun's numbers must match the reported numbers. If they don't, the
   discrepancy IS the finding — investigate before reporting anything.
+
+**An aggregate whose instances cannot be listed is not verified.** A rate,
+a score or a failure count is a summary of instances, and only the
+instances can be checked. If no output names the failing ones, the number
+is unverified however many times it reproduces.
 
 ## Red Flags - STOP
 
