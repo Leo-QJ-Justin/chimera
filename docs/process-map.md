@@ -3,7 +3,8 @@
 > The current shape of the whole loop. Updated in the same commit as
 > any change that alters a flow. (Ch. N) marks the v2 change that
 > introduced an element; (v1.10 X) marks the v1.10 improvement, A to I,
-> that introduced one.
+> that introduced one; a bare (v1.10) marks the same release's context-
+> budget pass, which changed what loads rather than what the loop does.
 
 ## 1. Project genesis — /design-project
 
@@ -77,6 +78,8 @@ writing-plans:
     one command that proves it live (v1.10 E)
    ↓
 test-driven-development (execution):
+  writing-good-tests.md loads ONLY for mocks/fakes, helpers or
+    cleanup, artifact tests, or nontrivial expected values (v1.10)
   preconditions run BEFORE task 1; a failure stops the phase —
     renew / reorder / split (v1.10 E)
   deviations logged in ## Deviations at the moment they are made
@@ -99,6 +102,8 @@ finishing-a-branch:
 designing-tasks → research brief with decision line
    ↓
 exploring-reproducibly:
+  playbook-stat-tests.md loads ONLY for an inferential claim, test
+    selection, or a group judgment beyond the sample (v1.10)
   pin snapshot → eda-profiler (one tabular dataset) or
   corpus-profiler (heterogeneous corpus) (Ch. 2)
   findings doc closes with Decision + Constraint + Implications on
@@ -132,4 +137,8 @@ Field use accumulates friction
      improvement spec in docs/
    → implement in the chimera repo: each change pressure-tested
      against its own failure story before landing (Ch. 10)
+   → context cost is a gate too: tests/check-skill-budgets.py
+     enforces per-file, per-description and whole-bundle budgets;
+     a skill that cannot fit argues about its ceiling, never
+     about its triggers (v1.10)
    → this map updated in the same commit as any flow change (Ch. 13)

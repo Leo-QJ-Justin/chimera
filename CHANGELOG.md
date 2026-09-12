@@ -39,7 +39,13 @@ project must produce. Every improvement edits a file that already runs.
   reducing it to identity on a scratch copy and reporting the tests that
   turn red, with an inconclusive guard for editable installs.
 - `docs/testing/pressure-scenarios/README.md` — index and walk
-  instructions; `change-14` to `change-22` are the nine new scenarios.
+  instructions; `change-14` to `change-22` are the nine new scenarios, and
+  `change-23` covers the bootstrap routing surface.
+- `tests/check-skill-budgets.py` — per-file, per-description and cumulative
+  workflow-bundle context budgets, wired into `smoke.md` section 0.
+  `--enforce` fails; `--report` measures without failing.
+- `docs/testing/prompt-compression.md` — the measurements, the two bases
+  the ceilings are set on, the preservation evidence and its stated gap.
 
 ### Changed
 - `designing-tasks`: new section **Approve Against Cases, Not Prose** — a

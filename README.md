@@ -121,18 +121,38 @@ Updating an installed chimera: see
 ## Testing
 
 `bash tests/test-branch-nudge.sh && bash tests/test-session-start.sh` for
-the hooks; [docs/testing/smoke.md](docs/testing/smoke.md) for the manual
-end-to-end matrix;
+the hooks; `python3 tests/check-skill-budgets.py --enforce` for per-file,
+per-description and cumulative workflow context budgets (`--report` to
+measure without failing); [docs/testing/smoke.md](docs/testing/smoke.md)
+for the manual end-to-end matrix;
 [docs/testing/pressure-scenarios/](docs/testing/pressure-scenarios/) for
 the per-change failure scenarios skill edits are walked against before
 landing.
 
+What a skill costs to load is a first-class constraint: the ordinary build
+path is budgeted as a whole, and heavy references load only when their
+trigger fires. Measurements, ceilings and their basis:
+[docs/testing/prompt-compression.md](docs/testing/prompt-compression.md).
+
 ## Roadmap
 
-- **v1.1** — RED-gate TDD hook (PreToolUse block on source edits without an
-  observed failing test; exceeds what either reference enforces)
-- **v2** — language rules packs: `common/` + `python/` shipped; further
-  languages when a project needs one
+Deferred items carry their promotion criterion in the release that deferred
+them, so the roadmap is the current CHANGELOG's `Deferred` section rather
+than a separate list. As of v1.10.0:
+
+- **A `writing-technical-documentation` skill** — when a second
+  documentation task on a materially different toolchain converges on the
+  same shape.
+- **A prior-art survey phase at genesis** — when two of the next three
+  genesis runs produce a commitment, with a cited instance, that the
+  brainstorm missed. The survey *guard* already ships.
+- **Document status markers** — if improvement D's per-task fold proves
+  insufficient over a full project.
+- **A RED-gate TDD hook** (PreToolUse block on source edits without an
+  observed failing test) — still unbuilt; it would exceed what either
+  reference harness enforces.
+- **Further language rules packs** — `common/` and `python/` ship today;
+  more when a project needs one.
 
 ## License
 
