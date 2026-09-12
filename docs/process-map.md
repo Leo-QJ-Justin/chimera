@@ -20,6 +20,9 @@ Phase 1a DATA-CONTACT SPIKE   (Ch. 2) fires when a real corpus or
    "profile → brief" recipe in writing-comparative-reports
    (population join, constraint move, reference implementation,
    bidirectional grounding, live conflicts, evidence labels)
+   a survey of outside solutions carries a mapping-by-cited-instance
+   and a ruled-out section; the survey proposes, the corpus
+   decides (v1.10 I)
    ↓
 Phase 1b BIND             (Ch. 8) convert evidence into commitments,
    each as evidence → constraint → implications:

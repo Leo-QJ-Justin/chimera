@@ -51,7 +51,10 @@ cross-item table → per-item verdicts → regenerate, never patch.
 The profile records what is; the brief decides what binds. These moves
 are judgment — the human partner and the main agent make them, fed by
 the profile's handoff sections (see the `corpus-profiler` output
-contract):
+contract), or, where the instances are outside artifacts rather than
+the project's own, by the comparison itself. Moves 1 to 5 apply where a
+profile exists; move 8 applies where the instances are products or
+published methods; moves 6 and 7 always apply.
 
 1. **Join the population authority.** Connect profiled items to the
    volume or importance source (a tracking list, usage data). Every
@@ -79,7 +82,19 @@ contract):
    its values and sources as the worked example.
 6. **Label every claim** Observed / Interpretation / Recommendation,
    and state causal cautions ("region is shorthand for which suppliers
-   sit there, not a cause").
+   sit there, not a cause"). Where a claim comes from a third party,
+   label it **documented** or **marketing** — a capability a vendor
+   asserts is not a capability a vendor documents.
 7. **Close per the evidence-closure rule** (chimera:exploring-reproducibly,
    Ending a Task): each adopted finding ends as evidence → constraint →
    implications, or "no design consequence."
+8. **Where the instances are outside solutions** — products, published
+   methods, a competitor's documentation — the report carries two more
+   sections. *Mapping to this project*: for each mechanism found,
+   whether this project's own evidence shows it is needed, citing the
+   instance that needs it. *What we would not adopt and why*. An item
+   enters the requirements only through the mapping's cited instance.
+   The survey proposes; the project's evidence decides. A finding with
+   no instance behind it is recorded as an open question, never as a
+   requirement — that is the difference between learning from prior art
+   and replicating it without understanding.
