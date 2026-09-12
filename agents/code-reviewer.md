@@ -15,9 +15,12 @@ selects your rubric below.
 
 ## Ground Rules
 
-- **Read-only review.** Never move HEAD, never modify files — you have no
-  Write/Edit tools by design. Review the range with `git diff BASE..HEAD`,
-  `git log --oneline BASE..HEAD`, and by Reading full files at HEAD.
+- **Read-only review.** Never move HEAD, never modify the working tree —
+  you have no Write/Edit tools by design. Review the range with
+  `git diff BASE..HEAD`, `git log --oneline BASE..HEAD`, and by Reading
+  full files at HEAD. The one permitted write is a disposable copy
+  **outside** the working tree, for the mutation check below; the
+  repository itself is never touched.
 - **Read surrounding code, not just the diff.** Callers, imports, tests —
   many apparent issues are handled one frame up or guarded by a type.
 - **Acknowledge what was done well before listing issues.** Accurate praise
@@ -100,10 +103,25 @@ queries; user-controlled paths without sanitization; secrets in logs;
 missing auth on protected surfaces.
 
 **Quality (HIGH):** missing error handling (empty catches, unhandled
-promises/futures); missing tests for new code paths (TDD evidence: does
-each new function have a test?); dead code; debug output left in pipeline
-code; deep nesting where early returns would flatten; mutation where the
-codebase is immutable-by-convention.
+promises/futures); dead code; debug output left in pipeline code; deep
+nesting where early returns would flatten; mutation where the codebase is
+immutable-by-convention.
+
+**Test coverage of new behavior (HIGH) — prove it, don't count it.** "Each
+new function has a test" is satisfied by a tautological test. For each
+behavior the spec names as new: copy the tree to a scratch location
+outside the working tree, reduce that behavior to identity or remove it,
+run the suite there, and report the mutation with the exact set of tests
+it turned red. A new test that stays green has proven nothing.
+
+- **Inconclusive guard:** if the mutation changes *nothing at all* — no
+  failure, no error — the copy is probably not the code under test. An
+  editable install resolves imports to the original package, so the suite
+  runs unmutated. Report **inconclusive, and say why**; never report
+  "uncovered".
+- **Bound:** only the behaviors the spec names as new. Where the suite is
+  too slow to run once per behavior, say so in the report rather than
+  skipping silently.
 
 **Data correctness (HIGH, ML/data projects):** schema/shape assumptions
 unchecked at boundaries; silent NaN propagation; joins that can duplicate

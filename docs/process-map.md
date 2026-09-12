@@ -87,6 +87,8 @@ verifying-before-done
 finishing-a-branch:
   code-reviewer briefed with spec + plan constraints + the
     deviations list framed as questions (Ch. 5)
+  reviewer proves new-behavior coverage by an executed mutation on
+    a scratch copy; nothing moved = inconclusive (v1.10 H)
   → Step 0b: every Decisions entry marked task-local or written
     into its living document; a convention change gives every
     artifact holding the old answer a disposition (v1.10 D)
