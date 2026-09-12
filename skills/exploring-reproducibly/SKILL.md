@@ -5,13 +5,10 @@ description: Use when starting exploration-mode work - EDA, model experiments, b
 
 # Exploring Reproducibly
 
-Chimera's exploration-mode discipline. The build-mode counterpart is
-chimera:test-driven-development.
-
 ## Overview
 
-**Core principle:** A result that cannot be re-run is not a result. The
-deliverable of exploration is a recorded decision, not code.
+**Core principle:** A result must rerun. Exploration delivers a recorded
+decision, not code.
 
 **Violating the letter of this process is violating its spirit.**
 
@@ -21,10 +18,8 @@ deliverable of exploration is a recorded decision, not code.
 NO ANALYSIS WITHOUT A BRIEF, NO RESULT WITHOUT A RERUN
 ```
 
-Tripwire: opening a notebook without a research brief → stop, write the
-brief (chimera:designing-tasks). The brief names the question, the method,
-and *what result would change what decision*. Analysis without that line is
-wandering, not exploring.
+Opening a notebook without a brief is a stop. The brief names the question,
+method, and *what result would change what decision*.
 
 ## Pin Everything
 
@@ -40,12 +35,9 @@ Before the first computation:
 
 ## Profile First (new datasets)
 
-For a dataset you have not worked with before: dispatch the `eda-profiler`
-agent with the dataset path, the pinned snapshot note, and the target and
-key columns if known. It returns a draft `Observations & Findings` first pass
-(mechanical checks only) plus a `Judgment calls` list. Adapt the draft
-into the notebook; every judgment call is yours to rule on. This is an
-offer, not a gate: tiny or familiar data skips it.
+For unfamiliar data, dispatch `eda-profiler` with its path, snapshot, and
+known target and keys. Adapt its mechanical `Observations & Findings` draft;
+rule on every `Judgment calls` item. Tiny or familiar data can skip it.
 
 ## Log As You Go
 
@@ -74,12 +66,12 @@ with the reason recorded. This is the guard against endless fishing.
 - Prose, observation cells, and chart style follow the contract in
   [analysis-style.md](analysis-style.md). Load it when writing any
   analysis prose.
-- EDA technique follows the playbooks. Load
-  [playbook-generic.md](playbook-generic.md) and
-  [playbook-stat-tests.md](playbook-stat-tests.md) for any EDA work,
-  plus the one matching the data at hand:
+- EDA loads [playbook-generic.md](playbook-generic.md) and one matching
+  playbook:
   [tabular](playbook-tabular.md), [time-series](playbook-time-series.md),
   [text](playbook-text.md), [images](playbook-images.md).
+- Load [playbook-stat-tests.md](playbook-stat-tests.md) only for an
+  inferential claim, test selection, or a group judgment beyond the sample.
 - Notebooks live in `notebooks/`, named `NN-topic.ipynb` (ordered).
 - Structure: objective cell (from the brief) → data loading (pinned
   snapshot stated) → analysis → findings-summary cell mirroring the
@@ -109,12 +101,8 @@ decision names no constraint and no implications is incomplete: a
 verdict says what the evidence showed; a constraint says what we now
 build differently because of it.
 
-Exits:
-- **Adopt** → promoting the result is a NEW build-mode task; the experiment
-  code is reference only (chimera:test-driven-development, The Promotion
-  Rule).
-- **Reject / park** → the recorded decision is the deliverable; archive the
-  notebook.
+**Adopt** starts a new build task; experiment code stays reference only.
+**Reject / park** records the decision and archives the notebook.
 
 Before recording any final number: clean rerun on the pinned snapshot must
 reproduce it (chimera:verifying-before-done, Exploration Mode).

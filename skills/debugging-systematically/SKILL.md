@@ -5,11 +5,9 @@ description: Use when encountering any bug, test failure, or unexpected behavior
 
 # Debugging Systematically
 
-> Adapted from Superpowers `systematic-debugging` (Jesse Vincent, MIT).
-
 ## Overview
 
-**Core principle:** ALWAYS find root cause before attempting fixes. Symptom fixes are failure.
+**Core principle:** Find root cause before attempting fixes.
 
 **Violating the letter of this process is violating the spirit of debugging.**
 
@@ -23,22 +21,10 @@ If you haven't completed Phase 1, you cannot propose fixes.
 
 ## When to Use
 
-Use for ANY technical issue: test failures, bugs, unexpected behavior,
-performance problems, build failures, integration issues — and in
-exploration mode, a result that makes no sense (impossibly good metric,
-numbers that changed between runs).
-
-**Use this ESPECIALLY when:**
-- Under time pressure (emergencies make guessing tempting)
-- "Just one quick fix" seems obvious
-- You've already tried multiple fixes
-- Previous fix didn't work
-- You don't fully understand the issue
-
-**Don't skip when:**
-- Issue seems simple (simple bugs have root causes too)
-- You're in a hurry (rushing guarantees rework)
-- It's "just an analysis notebook" (wrong numbers become wrong decisions)
+Use for test, build, integration, performance, and behavior failures, plus
+exploration results that make no sense. Time pressure, obvious-looking
+fixes, prior failed attempts, simple issues, and notebooks do not exempt
+the process.
 
 ## The Four Phases
 
@@ -49,25 +35,19 @@ You MUST complete each phase before proceeding to the next.
 **BEFORE attempting ANY fix:**
 
 1. **Read Error Messages Carefully**
-   - Don't skip past errors or warnings — they often contain the exact solution
-   - Read stack traces completely; note line numbers, file paths, error codes
+   - Read errors, warnings, and complete stack traces; record locations and codes.
 
 2. **Reproduce Consistently**
    - Can you trigger it reliably? What are the exact steps?
    - If not reproducible → gather more data, don't guess
-   - **Exploration mode:** before suspecting the code, check the pinned
-     snapshot and seed — an unpinned input or unset seed is the most common
-     "impossible result" root cause
+   - **Exploration:** check the pinned snapshot and seed before the code.
 
 3. **Check Recent Changes**
-   - What changed that could cause this? Git diff, recent commits
-   - New dependencies, config changes, environmental differences
+   - Inspect diffs, commits, dependencies, config, and environment changes.
 
 4. **Gather Evidence in Multi-Component Systems**
 
-   WHEN the system has multiple components (ingest → transform → model →
-   report; API → service → database), add diagnostic instrumentation BEFORE
-   proposing fixes:
+   For multiple components, instrument boundaries before proposing fixes:
 
    ```
    For EACH component boundary:
@@ -81,12 +61,10 @@ You MUST complete each phase before proceeding to the next.
    THEN investigate that specific component
    ```
 
-   For a pipeline: log row counts, schema, and a checksum at each stage —
-   the stage where they diverge from expectation is where you investigate.
+   For pipelines, compare row counts, schema, and checksums by stage.
 
 5. **Trace Data Flow**
-   - Where does the bad value originate? What called this with the bad value?
-   - Keep tracing up until you find the source. Fix at source, not at symptom.
+   - Trace the bad value through callers to its source. Fix the source.
 
 ### Phase 2: Pattern Analysis
 
@@ -162,15 +140,6 @@ You MUST complete each phase before proceeding to the next.
 | "Reference too long, I'll adapt the pattern" | Partial understanding guarantees bugs. Read it completely. |
 | "I see the problem, let me fix it" | Seeing symptoms ≠ understanding root cause. |
 | "One more fix attempt" (after 2+ failures) | 3+ failures = architectural problem. Question the pattern, don't fix again. |
-
-## Quick Reference
-
-| Phase | Key Activities | Success Criteria |
-|-------|---------------|------------------|
-| **1. Root Cause** | Read errors, reproduce, check changes, gather evidence | Understand WHAT and WHY |
-| **2. Pattern** | Find working examples, compare | Identify differences |
-| **3. Hypothesis** | Form theory, test minimally | Confirmed or new hypothesis |
-| **4. Implementation** | Create test, fix, verify | Bug resolved, tests pass |
 
 ## When Process Reveals "No Root Cause"
 

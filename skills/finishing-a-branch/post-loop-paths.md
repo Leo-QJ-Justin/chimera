@@ -1,10 +1,9 @@
 # Finishing a Branch — exception paths
 
-> Sibling of `SKILL.md`. **Load when:** amending already-merged work,
-> splitting work to a later roadmap row, folding a task's decisions into
-> the living documents, or confirming a discard. The main skill covers
-> the ordinary path; these are the ones that fire rarely and are
-> improvised when they are not written down.
+> Sibling of `SKILL.md`. **Load when:** handling detached HEAD, amending
+> already-merged work, splitting work to a later roadmap row, folding a
+> task's decisions into living documents, or confirming a discard. The
+> main skill covers the ordinary path; these fire rarely.
 
 ## If your human partner asks to discard the work
 
@@ -21,6 +20,19 @@ Type 'discard' to confirm.
 
 Wait for that exact word. Then cd to MAIN_ROOT, clean up (Step 6), and
 `git branch -D <branch>`.
+
+## Detached HEAD
+
+Present exactly:
+
+```
+Task complete. You're on a detached HEAD (externally managed workspace).
+
+1. Push as new branch and create a Pull Request
+2. Keep as-is (I'll handle it later)
+
+Which option?
+```
 
 ## Amendment path
 
@@ -64,12 +76,4 @@ There is no third option. An artifact with no disposition is one that
 silently holds a superseded answer, which is what this step exists to
 prevent.
 
-## Quick Reference
-
-| Option | Merge | Push | Keep Worktree | Cleanup Branch |
-|--------|-------|------|---------------|----------------|
-| 1. Merge locally | yes | - | - | yes |
-| 2. Create PR | - | yes | yes | - |
-| 3. Keep as-is | - | - | yes | - |
-| Discard (explicit request only) | - | - | - | yes (force) |
 

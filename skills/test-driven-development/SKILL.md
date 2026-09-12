@@ -5,35 +5,22 @@ description: Use when implementing any build-mode task - any feature, bugfix, pi
 
 # Test-Driven Development (TDD)
 
-> Adapted from Superpowers `test-driven-development` (Jesse Vincent, MIT),
-> with chimera's deterministic boundary and promotion rule.
-
 ## Overview
 
-Write the test first. Watch it fail. Write minimal code to pass.
-
-**Core principle:** If you didn't watch the test fail, you don't know if it tests the right thing.
+Write the test first, watch it fail, then write minimal code to pass. A test
+not seen failing has not proved that it tests the intended behavior.
 
 **Violating the letter of the rules is violating the spirit of the rules.**
 
 ## When to Use
 
-**Always (build mode):**
-- New features
-- Bug fixes
-- Refactoring
-- Behavior changes
-- Data pipelines, feature engineering, IO adapters
+Use for all build-mode features, fixes, refactors, behavior changes, data
+pipelines, feature engineering, and IO adapters.
 
-**Not this skill:** exploration-mode work (EDA, experiments, spikes) uses
-chimera:exploring-reproducibly — different discipline, same rigor.
+Exploration work uses chimera:exploring-reproducibly.
 
-**Exceptions (ask your human partner):**
-- Throwaway prototypes
-- Generated code
-- Configuration files
-
-Thinking "skip TDD just this once"? Stop. That's rationalization.
+Ask your human partner before exempting throwaway prototypes, generated
+code, or configuration. Thinking "skip TDD once" is rationalization.
 
 ## The Iron Law
 
@@ -43,13 +30,7 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 
 Write code before the test? Delete it. Start over.
 
-**No exceptions:**
-- Don't keep it as "reference"
-- Don't "adapt" it while writing tests
-- Don't look at it
-- Delete means delete
-
-Implement fresh from tests. Period.
+Do not keep, inspect, or adapt it as reference. Implement fresh from tests.
 
 ## Scope: The Deterministic Boundary (ML/data projects)
 
@@ -76,41 +57,8 @@ REFACTOR (stay green) → repeat.
 
 ### RED - Write Failing Test
 
-Write one minimal test showing what should happen.
-
-<Good>
-```python
-def test_retries_failed_operations_three_times():
-    attempts = 0
-    def operation():
-        nonlocal attempts
-        attempts += 1
-        if attempts < 3:
-            raise RuntimeError("fail")
-        return "success"
-
-    result = retry_operation(operation)
-
-    assert result == "success"
-    assert attempts == 3
-```
-Clear name, tests real behavior, one thing
-</Good>
-
-<Bad>
-```python
-def test_retry_works(mocker):
-    mock = mocker.Mock(side_effect=[RuntimeError, RuntimeError, "success"])
-    retry_operation(mock)
-    assert mock.call_count == 3
-```
-Vague name, tests the mock not the code
-</Bad>
-
-**Requirements:**
-- One behavior
-- Clear name
-- Real code (no mocks unless unavoidable)
+Write one clearly named test for one observable behavior, using real code
+unless a dependency is slow or external.
 
 ### Verify RED - Watch It Fail
 
@@ -154,31 +102,29 @@ Keep tests green. Don't add behavior.
 
 ## Good Tests
 
-| Quality | Good | Bad |
-|---------|------|-----|
-| **Minimal** | One thing. "and" in name? Split it. | `test_validates_email_and_domain_and_whitespace` |
-| **Clear** | Name describes behavior | `test_1` |
-| **Shows intent** | Demonstrates desired API | Obscures what code should do |
+Before each test body:
 
-When writing or changing any test, read [writing-good-tests.md](writing-good-tests.md) for the rules that keep tests honest:
-- Name the production change that would make the test fail — before writing it
-- Assert on real behavior, never on mock behavior
-- Keep test-only code in test utilities, out of production classes
-- Understand a dependency's side effects before mocking it
+1. Name the production change that would make the test fail.
+2. Derive expected values independently of production helpers.
+3. Assert real behavior, not mock existence.
+
+Load [writing-good-tests.md](writing-good-tests.md) only when using mocks or
+fakes, adding test helpers or cleanup, testing source/config/documents, or
+deriving expected values through nontrivial helpers.
 
 ## Common Rationalizations
 
 | Excuse | Reality |
 |--------|---------|
 | "Too simple to test" | Simple code breaks. Test takes 30 seconds. |
-| "I'll test after" | Tests written after pass immediately — which proves nothing. They may test the wrong thing, test the implementation instead of the behavior, or miss the edge case you forgot. You never watched it fail, so you never proved it can catch the bug. Test-first forces that failure. |
-| "Tests after achieve same goals (spirit not ritual)" | Tests-after answer "what does this do?"; tests-first answer "what should this do?" Tests written after are biased by the code you already wrote — you verify the cases you remembered, not the ones you'd have discovered. Coverage without proof the tests work. |
-| "Already manually tested" | Manual testing is ad-hoc: no record, no re-run, easy to forget cases under pressure. "Worked when I tried it" ≠ comprehensive. |
-| "Deleting X hours is wasteful" | Sunk cost fallacy — that time is already spent either way. Keeping code you can't trust is the waste. |
+| "I'll test after" | A test that passes immediately proves nothing. You never saw it catch the missing behavior. |
+| "Tests after achieve same goals (spirit not ritual)" | Tests-after describe existing code; tests-first define required behavior without implementation bias. |
+| "Already manually tested" | Manual checks leave no repeatable record and miss cases under pressure. |
+| "Deleting X hours is wasteful" | The time is spent. Keeping unproven code adds more cost. |
 | "Keep as reference, write tests first" | You'll adapt it. That's testing after. Delete means delete. |
 | "Need to explore first" | Fine — that's an exploration-mode spike. Throw the spike away, then build with TDD (see The Promotion Rule). |
 | "Test hard = design unclear" | Listen to test. Hard to test = hard to use. |
-| "TDD will slow me down" | TDD IS the pragmatic path: catches bugs before commit, prevents regressions, lets you refactor without fear. "Pragmatic" shortcuts mean debugging in production. |
+| "TDD will slow me down" | It catches bugs before commit and makes refactoring safe. |
 | "It's ML code, it's stochastic" | The pipeline around the model is deterministic. Test it. Fix seeds where determinism is by choice. |
 | "Existing code has no tests" | You're improving it. Add tests for existing code. |
 
@@ -205,14 +151,10 @@ When writing or changing any test, read [writing-good-tests.md](writing-good-tes
 
 Before marking work complete:
 
-- [ ] Every new function/method has a test
-- [ ] Watched each test fail before implementing
-- [ ] Each test failed for expected reason (feature missing, not typo)
-- [ ] Wrote minimal code to pass each test
-- [ ] All tests pass
-- [ ] Output pristine (no errors, warnings)
-- [ ] Tests use real code (mocks only if unavoidable)
-- [ ] Edge cases and errors covered
+- [ ] Each new behavior has a test that failed for the expected reason.
+- [ ] Minimal code made it pass; refactoring stayed green.
+- [ ] The full suite passes with no errors or warnings.
+- [ ] Tests exercise real behavior and cover errors and boundaries.
 
 Can't check all boxes? You skipped TDD. Start over.
 

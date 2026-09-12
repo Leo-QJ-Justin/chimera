@@ -1,31 +1,16 @@
 ---
 name: writing-in-ste
-description: Use when writing or reviewing a document that another party must parse without asking a follow-up question - a PRD, ADR, system design, spec, tool description, error message, or inter-agent instruction - rewrites dense or ambiguous English into one-meaning-per-word, active-voice, short-sentence form
+description: Use when writing or reviewing a PRD, ADR, spec, tool description, error message, or instruction that must be understood without follow-up questions
 ---
 
 # Writing in STE
-
-> Ported from `danyuchn/asd-ste100-skill` (MIT), which repurposes
-> ASD-STE100 for agent-facing English. The rule categories come from
-> ASD-STE100 Issue 9 (January 2025), maintained by the Simplified
-> Technical English Maintenance Group. The standard's approved-word
-> dictionary is **not** reproduced here; the principle behind it is
-> applied instead. For word-by-word compliance, use the free official
-> download at https://www.asd-ste100.org/.
 
 ## Overview
 
 **Core principle:** write for a reader who cannot ask you what you meant.
 
-ASD-STE100 exists because a maintenance technician on a tarmac has no
-back-channel to the author of the manual. A genesis document has the same
-readers: future-you months later, an agent executing a task from it, and
-a reviewer who was not in the conversation that produced it. Ambiguity
-that a present author would resolve in one sentence becomes a wrong build
-instead.
-
-STE removes the two largest sources of misreading: words that carry more
-than one meaning, and sentences that admit more than one structure.
+Use ASD-STE100's agent-facing principles: one meaning per word and one
+structure per sentence. Its approved-word dictionary is outside this skill.
 
 ## When to use
 
@@ -56,10 +41,8 @@ Applying it there costs meaning and gains nothing.
 | Domain terms | Define each non-common-English term once, in the Terms table | Use a domain term the reader must infer |
 | Notation at first use | Give every symbol, formula variable, or abbreviation a plain-word reading where it first appears: "$P \setminus G$ (the pilot set excluding the gold set)" | Use undefined notation — a document that must be parsed without a follow-up question fails the moment it does |
 
-The last row is the one that connects to the templates. STE permits a
-project dictionary above its base vocabulary, which is what the PRD's
-`## Terms` section is. Without that table, "one word, one meaning" has
-nothing to anchor to and domain nouns drift between documents.
+The PRD `## Terms` table is the project dictionary that keeps domain nouns
+stable across documents.
 
 ## Process
 
@@ -88,8 +71,7 @@ Close with one line naming anything you deliberately left alone, and why.
 
 ## Applying it to genesis documents
 
-Each genesis document opens with one line stating the register, so a
-later reader knows the flatness is deliberate:
+Each genesis document declares the register:
 
 ```markdown
 > Written in Simplified Technical English (ASD-STE100 register): short
@@ -97,9 +79,7 @@ later reader knows the flatness is deliberate:
 > defined in the Terms table.
 ```
 
-Run the rewrite pass before the approval gate, not after. A document
-approved in one register and rewritten in another is a second document
-that nobody approved.
+Run the rewrite before approval; a later rewrite was not approved.
 
 ## Common mistakes
 

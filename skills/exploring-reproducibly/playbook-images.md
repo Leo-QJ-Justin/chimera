@@ -2,8 +2,9 @@
 
 Image datasets, typically for classification. Load with
 [playbook-generic.md](playbook-generic.md) (five stages, cleaning
-workflow, leakage rules) and
-[playbook-stat-tests.md](playbook-stat-tests.md).
+workflow, leakage rules). Load [playbook-stat-tests.md](playbook-stat-tests.md)
+only for an inferential claim, test selection, or a group judgment beyond
+the sample.
 
 `[external]` marks published practice adopted here but not yet exercised
 in a shipped analysis.

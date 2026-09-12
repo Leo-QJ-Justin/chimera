@@ -1,11 +1,9 @@
 ---
 name: verifying-before-done
-description: Use when about to claim work is complete, fixed, or passing, or an analysis result is real, before committing, merging, or reporting numbers - requires running fresh verification and reading output first; evidence before assertions always
+description: Use before claiming work is complete, fixed, passing, or supported by analysis, and before committing, merging, or reporting results
 ---
 
 # Verifying Before Done
-
-> Adapted from Superpowers `verification-before-completion` (Jesse Vincent, MIT).
 
 ## Overview
 
@@ -92,58 +90,12 @@ is unverified however many times it reproduces.
 
 ## Key Patterns
 
-**Tests:**
-```
-✅ [Run test command] [See: 34/34 pass] "All tests pass"
-❌ "Should pass now" / "Looks correct"
-```
-
-**Regression tests (TDD Red-Green):**
-```
-✅ Write → Run (pass) → Revert fix → Run (MUST FAIL) → Restore → Run (pass)
-❌ "I've written a regression test" (without red-green verification)
-```
-
-**Build:**
-```
-✅ [Run build] [See: exit 0] "Build passes"
-❌ "Linter passed" (linter doesn't check compilation)
-```
-
-**Analysis results:**
-```
-✅ Restart kernel → Rerun on pinned snapshot → Numbers match → Record in findings
-❌ "The backtest showed 12% lift" (from a run with mutated notebook state)
-```
-
-**Requirements:**
-```
-✅ Re-read plan → Create checklist → Verify each → Report gaps or completion
-❌ "Tests pass, phase complete"
-```
-Where `docs/prd.md` exists, build the checklist from the *Done when* lines
-of the FRs the spec realizes — they were written to be testable. Without a
-PRD, re-read the plan as above.
-
-**Agent delegation:**
-```
-✅ Agent reports success → Check VCS diff → Verify changes → Report actual state
-❌ Trust agent report
-```
+For regression tests, run with the fix, revert the fix and require failure,
+then restore and require success. For requirements, use the realized FR
+*Done when* lines when a PRD exists; otherwise use the plan.
 
 ## When To Apply
 
-**ALWAYS before:**
-- ANY variation of success/completion claims
-- ANY expression of satisfaction
-- ANY positive statement about work state
-- Committing, PR creation, task completion
-- Recording a final number in a findings doc
-- Moving to next task
-- Delegating to agents
-
-**Rule applies to:**
-- Exact phrases
-- Paraphrases and synonyms
-- Implications of success
-- ANY communication suggesting completion/correctness
+Apply before any statement implying success, satisfaction, correctness, or
+completion; before commits, PRs, task transitions, and final numbers; and
+after delegated work.

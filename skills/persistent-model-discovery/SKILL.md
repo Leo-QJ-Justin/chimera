@@ -1,6 +1,6 @@
 ---
 name: persistent-model-discovery
-description: Use during /design-project Phase 1b (BIND) when the system has external consumers, reproducibility needs, schema migration costs, compliance needs, or AI provenance requirements - locks the persistent model in docs/technical-requirements.md before the PRD is written
+description: Use during /design-project Phase 1b when external consumers, reproducibility, migration cost, compliance, or AI provenance require a persistent model
 ---
 
 # Persistent Model Discovery

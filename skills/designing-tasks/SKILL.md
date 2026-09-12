@@ -5,72 +5,43 @@ description: Use before any task-level creative work - building a feature or pip
 
 # Designing Tasks
 
-> Adapted from Superpowers `brainstorming` (Jesse Vincent, MIT), slimmed to
-> task altitude and made mode-aware. Project-level design (PRD,
-> architecture, system design) is `/design-project`, not this skill.
-
 Turn a task into an approved design through natural collaborative dialogue.
 
 <HARD-GATE>
-Do NOT invoke any implementation skill, write any code, open any notebook,
-or take any implementation action until you have presented a design and your
-human partner has approved it. This applies to EVERY task regardless of
-perceived simplicity.
+Do not implement, code, or open a notebook before presenting a design and
+receiving approval. This applies to every task.
 </HARD-GATE>
-
-## Anti-Pattern: "This Is Too Simple To Need A Design"
-
-Every task goes through this process — a small utility, a one-metric EDA
-pass, a config-driven pipeline stage, all of them. "Simple" tasks are where
-unexamined assumptions cause the most wasted work. The design can be short
-(a few sentences), but you MUST present it and get approval.
 
 ## Checklist
 
 You MUST create a todo for each item and complete them in order:
 
-1. **Explore context** — the task's spec source (roadmap row, request),
-   relevant files, docs, recent commits. If `docs/system-design.md` exists,
-   read it: which module(s) does this task touch? If `docs/prd.md` exists
-   and the roadmap row's `Realizes` column names requirement IDs
-   (`FR-N`), read those requirements — and in the design dialogue,
-   re-present each requirement's enumerated content to your human partner
-   for re-confirmation ("FR-8 names these seven metrics — still all
-   wanted?"), never cite the id as settled. Requirement lists approved
-   wholesale at genesis get item-level approval only when re-shown at
-   task time.
-   - **Check every premise about the data.** "X never prints Y",
-     "every Z carries W" is a claim, not context. Check it against the
-     pinned data and cite the instances that support it, or the one
-     that breaks it. A premise resting on a fact outside the repository
-     — a standard, a code scheme, a third party — is verified against
-     that authority and the check recorded first.
+1. **Explore context** — read the request or roadmap row, relevant files,
+   docs, and recent commits. Read affected modules in system design. If a
+   roadmap `Realizes` entry names PRD requirements, re-present each one's
+   enumerated content for item-level confirmation; an ID is not consent.
+   - **Check every premise about the data.** "X never prints Y", "every Z
+     carries W" is a claim. Check pinned data and cite supporting instances
+     or the counterexample. Verify external facts against their authority
+     before making a ruling.
 2. **Determine mode** — confirm build | exploration (set at /start-task);
    it decides what Step 4 produces.
 3. **Ask clarifying questions** — one at a time, one per message; prefer
    multiple choice; focus on purpose, constraints, success criteria.
 4. **Propose 2-3 approaches** — with trade-offs; lead with your
    recommendation and reasoning. YAGNI ruthlessly.
-5. **Present the design** — in sections scaled to complexity (a few
-   sentences to ~200 words each); ask after each section whether it looks
-   right. Where the design defines a rule, present it per *Approve
-   Against Cases, Not Prose* below.
+5. **Present the design** — use sections scaled to complexity; confirm each.
+   Present rules per *Approve Against Cases, Not Prose*.
 6. **Write the design doc** — `docs/specs/YYYY-MM-DD-<topic>.md`, commit it.
-7. **Self-review** — placeholder scan, internal consistency, scope check,
-   ambiguity check; if the spec carries a flow sketch, re-walk it and
-   count the files per traced call against the depth budget. Two more
-   passes, both mechanical:
+7. **Self-review** — check placeholders, consistency, scope, ambiguity, and
+   any flow sketch against the file-depth budget. Then run:
    - **Instance check:** every statement of the form "the data does /
      never does" carries an instance citation — file, section, page, or
      a count over the pinned set. One without is a placeholder.
    - **Enforcement check:** every sentence of the form "X cannot
-     happen", "X addresses no unit", "X is never emitted" names the
-     validator that refuses X or the test that proves X absent. A
-     stated impossibility with no enforcement is a hope: enforce it in
-     the contract, or move it to Decisions with the trigger that would
-     make it false.
-
-   Fix inline; no re-review.
+     happen" or "X is never emitted" names its validator or test. Without
+     enforcement, enforce it or move it to Decisions with a false-making
+     trigger. Fix inline; no re-review.
 8. **User review gate** — "Spec written and committed to `<path>`. Please
    review before we write the implementation plan." Wait. Make requested
    changes.
@@ -80,47 +51,32 @@ You MUST create a todo for each item and complete them in order:
 
 **Build mode — task spec:**
 - Behavior: what it does, observable outcomes, edge cases. Where the row
-  names requirements, say which `FR-N` the spec realizes: their *Done
-  when* lines are the acceptance criteria, to be satisfied or explicitly
-  renegotiated, never quietly dropped. Without a PRD, state behavior
-  directly as before. Any aggregate the spec defines — a rate, a score,
-  a failure count — ships with the instances behind it: the failing or
-  differing ones, each with identity, expected, observed and verdict,
-  bounded by a stated cap, emitted by the code that computes the
-  aggregate. Only instances can be checked; a summary cannot.
+  names requirements, identify each realized `FR-N`; its *Done when* lines
+  are acceptance criteria unless explicitly renegotiated. Any aggregate
+  ships with its failing or differing instances: identity, expected,
+  observed, verdict, and a stated cap, from the same code.
 - Interfaces: exact inputs/outputs; if `docs/system-design.md` exists, name
-  the module(s) touched and write against their I/O contracts — never
-  re-litigate the architecture inside a task. **A type is not a form:**
-  for each value, state the one spelling it takes, two or three inputs
-  that map to it, and the source rule where several places can supply
-  it. `str` is a type; "lowercase ISO-639-1, from the request header"
-  is a form. This binds anything a later task compares against or
-  stores — fixtures, expected outputs, config values, stored columns,
-  labelled data.
+  touched modules and honor their I/O contracts. **A type is not a form:**
+  state each value's one representation, two or three inputs mapping to it,
+  and its source rule. This binds fixtures, expected output, config, stored
+  columns, and labelled data.
 - Error handling and testing approach (per chimera:test-driven-development)
 - Flow sketch (required when the task adds or reshapes modules): a short
-  diagram that traces one input through the named functions and files to
-  the output. If tracing one call crosses more than the depth budget, the
-  spec says so and justifies each hop — or the design flattens before it
-  is presented. The depth budget comes from the project's coding rules;
-  if the project defines none, the budget is two files per traced call.
+  diagram tracing one input through named functions and files. If a call
+  exceeds the project's depth budget, justify every hop or flatten it. The
+  default is two files per call.
 - Decisions: every judgment call the spec makes, listed as *decision /
-  rejected alternative / trigger to revisit / supersedes*. A choice the
-  reader cannot find here is a choice the reader never approved.
-  *Supersedes* names what this decision replaces, or "none";
-  finishing-a-branch Step 0b reads it.
+  rejected alternative / trigger to revisit / supersedes*. *Supersedes*
+  names what it replaces or "none"; Step 0b consumes it.
 
 **Exploration mode — research brief:**
 - Question: what are we trying to learn?
 - Hypothesis: what do we expect and why?
 - Data: which sources, which snapshot will be pinned
 - Method: how we'll test the hypothesis; evaluation metric and guard
-  metric (inherit both from `docs/prd.md` if present). A brief cites no
-  FRs — exploration answers a question, it does not deliver a capability.
-  Every aggregate the method reports ships with the instances behind it:
-  the failing or differing ones, with identity, expected, observed and
-  verdict, bounded by a stated cap, emitted by the code that computes
-  the aggregate
+  metric, inherited from the PRD when present. A brief cites no FRs.
+  Every aggregate ships with its failing or differing instances: identity,
+  expected, observed, verdict, and a stated cap, from the same code
 - **Decision line (mandatory): "What result would change what decision?"**
   A brief without this line is incomplete — it is the single guard between
   research and wandering.
@@ -131,9 +87,7 @@ doc header.
 ## Scope Check
 
 If the task actually spans multiple independent deliverables ("build the
-pipeline and the dashboard and the alerting"), flag it immediately and
-split into roadmap rows — each row gets its own trip through the loop.
-Don't spend questions refining a task that needs decomposition first.
+pipeline and dashboard"), split it into roadmap rows before refining it.
 
 ## Decisions That Are the Human's Call
 
@@ -142,14 +96,10 @@ consent. Some decisions must be asked as an explicit question (checklist
 item 3) before the spec is written, never only recorded:
 
 - Any heuristic placed in a correctness path: a fail-closed gate, a
-  value-deciding rule, an acceptance fallback. The human chooses between
-  the heuristic and the honest alternative (narrower scope, an
-  exemption, a loud failure) knowing the trade-off. Where the heuristic
-  is accepted with a trigger to revisit, the Decisions entry names at
-  least one concrete input it gets wrong, found by probing it with
-  inputs from outside the sample. "A wrong case found in review" is not
-  a trigger; an enumerated input is. Your human partner decides with
-  the wrong case in front of them, or the entry is not complete.
+  value-deciding rule, or acceptance fallback. The human chooses it or an
+  honest alternative. If accepted with a revisit trigger, probe outside
+  the sample and name one concrete wrong input. "A wrong case found in
+  review" is not a trigger. The entry is incomplete without that case.
 - Any renegotiation of a requirement's stated scope.
 
 Litmus: if a reviewer could plausibly say "this cleverness does not
@@ -157,28 +107,21 @@ belong in a correctness path," the human decides at design time.
 
 ## Approve Against Cases, Not Prose
 
-A rule described in words is approved by a reader who cannot run it.
-Two forms, both before the spec is written:
+A rule described only in words is not reviewable. Before writing the spec:
 
 - **A rule is presented as a worked example.** A comparator, matcher,
-  ranker, canonical function, parser or ordering is shown as three or
-  more real inputs traced step by step to their outputs, in a table,
-  before or instead of a prose description. If your human partner asks
-  "show me with an example", the prose has already failed.
+  ranker, canonical function, parser, or ordering is a table of three or
+  more real inputs traced to outputs. A request for an example means the
+  prose already failed.
 - **A bulk artifact is produced one unit first.** Where a task produces
-  many units of one kind — fixtures, migrations, generated
-  configuration, labelled data, generated pages — produce one. List
-  every judgment call that unit forced which the interface did not
-  cover. Your human partner rules on each. Only then are the remaining
-  units produced. Eighteen units drafted in a day hide eighteen
-  applications of a choice nobody saw once.
+  many fixtures, migrations, generated configs, labels, or pages, produce
+  one. List the judgment calls it forced that the interface did not cover,
+  and get rulings before the rest are produced.
 
 ## Design for Isolation (build mode)
 
-Break the work into units with one clear purpose each, communicating
-through defined interfaces. For each unit you should be able to answer:
-what does it do, how do you use it, what does it depend on? If internals
-can't change without breaking consumers, the boundaries need work.
+Each unit has one purpose and a defined interface: behavior, use, and
+dependencies. Internals must change without breaking consumers.
 
 ## Common Rationalizations
 
@@ -194,6 +137,4 @@ can't change without breaking consumers, the boundaries need work.
 
 ## Terminal State
 
-**The ONLY skill you invoke after designing-tasks is chimera:writing-plans.**
-Do not invoke implementation skills, do not start coding, do not open a
-notebook.
+Invoke only chimera:writing-plans next. Do not implement or open a notebook.

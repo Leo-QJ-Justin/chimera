@@ -12,8 +12,11 @@ j = json.loads(data)
 h = j["hookSpecificOutput"]
 assert h["hookEventName"] == "SessionStart", h
 ctx = h["additionalContext"]
+assert "<CHIMERA_BOOTSTRAP>" in ctx, "bootstrap wrapper missing"
 assert "using-chimera" in ctx, "skill name missing from context"
 assert "Routing" in ctx, "routing table missing from context"
+# Length floor only. No ceiling: the bootstrap is the routing surface, and a
+# word cap here would make restoring a route's trigger keywords a test failure.
 assert len(ctx) > 500, f"context suspiciously short ({len(ctx)} chars)"
 assert "additional_context" not in j, "legacy field must not be emitted"
 print("PASS session-start shape")

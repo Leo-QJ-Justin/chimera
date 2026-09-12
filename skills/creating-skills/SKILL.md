@@ -5,16 +5,10 @@ description: Use when creating a new skill or editing an existing one - for chim
 
 # Creating Skills
 
-> Synthesized from Anthropic's skill-creator guidance, Superpowers'
-> writing-skills (Jesse Vincent, MIT), and ECC's learn-eval quality gate
-> (affaan-m, MIT). Deep reference: the
-> [superpowers deep-dive](../../docs/research/2026-07-29-superpowers-deep-dive.md)
-> — enforcement catalog (§c) and format conventions (§f).
-
 ## Overview
 
-**Core principle:** a skill is code that shapes agent behavior, not prose.
-It earns its context cost or it doesn't ship.
+**Core principle:** a skill is behavior-shaping code. It earns its context
+cost or does not ship.
 
 Create a todo per step below; complete them in order.
 
@@ -23,15 +17,13 @@ Create a todo per step below; complete them in order.
 Answer before writing anything:
 
 1. **Overlap scan.** Grep existing skills — this project's `.claude/skills/`,
-   chimera's `skills/`, `~/.claude/skills/` — for the same ground.
-   Absorbing into an existing skill beats creating a near-duplicate.
+  chimera's `skills/`, and `~/.claude/skills/`. Prefer absorption.
 2. **Mechanical constraint?** If a regex, linter, formatter, or hook can
    enforce it, automate it. Documentation is for judgment calls only.
 3. **Repeated situation?** One-off knowledge belongs in findings docs or
    the project CLAUDE.md, not a skill.
-4. **Placement.** Project-specific conventions → project `.claude/skills/`.
-   Universal workflow/technique → global or chimera. Uncertain → project
-   (promote later; demoting a global skill is harder).
+4. **Placement.** Project-specific → project `.claude/skills/`; universal →
+  global or chimera; uncertain → project.
 
 **Verdict (say it explicitly): Create | Absorb into <skill> | Automate
 instead | Drop.** Only "Create" proceeds to Step 2.
@@ -42,18 +34,16 @@ instead | Drop.** Only "Create" proceeds to Step 2.
 - `name`: verb-first gerund, lowercase-hyphen, matches the directory
   (`creating-skills`, not `skill-creation`).
 - `description`: third person, starts "Use when …", and states **only
-  triggering conditions — never the process**. A description that
-  summarizes the workflow becomes a shortcut agents take instead of
-  reading the body (measured failure: a "…with code review between
-  tasks" description caused one review where the body required two).
-  Make it keyword-rich: symptoms, error strings, synonyms, "about to
-  violate" moments.
+  triggering conditions, never process. Include symptoms, errors, synonyms,
+  and "about to violate" moments. Limit it to 30 words and 200 characters.
 - Body: Overview (core principle in 1-2 sentences) → When to Use → the
   process → Quick Reference / tables → Common Mistakes.
-- Token budget: always-loaded skills < 150 words; frequently loaded
-  < 200 lines; others < 500 lines. Move heavy reference material to
-  sibling files loaded conditionally ("Load when: …"). Never `@`-link
-  files — `@` force-loads at session start and burns context.
+- Context budget: always-loaded files ≤150 words; frequently loaded files
+  normally ≤1,000 words; rare files ≤2,500. A higher file ceiling needs a
+  measured workflow limit and reason in `tests/check-skill-budgets.py`.
+  An unconditional sibling counts in its parent's budget. A conditional
+  sibling needs an observable `Load when` trigger and its own ceiling.
+  Never `@`-link references because that force-loads them.
 - Cross-reference skills by namespace (`chimera:<name>`), never by bare
   path.
 - **User agnostic.** Skills, agents, commands, and templates speak in role
@@ -64,9 +54,7 @@ instead | Drop.** Only "Create" proceeds to Step 2.
 
 ## Step 3: Match the Form to the Failure
 
-Pick the guidance form from the failure mode you are preventing — the
-forms are not interchangeable (superpowers measured prohibitions
-*backfiring* on output-shape problems):
+Match the form to the observed failure:
 
 | Failure you observed | Form to write |
 |---|---|
@@ -75,10 +63,8 @@ forms are not interchangeable (superpowers measured prohibitions
 | Agent omits an element | Required slot in a template ("a plan without a stopping rule is incomplete") |
 | Behavior should differ by situation | Conditional keyed to an observable predicate ("if `docs/system-design.md` exists…") |
 
-Two findings that override instinct: **no nuance clauses** ("don't X
-unless it matters" reopens the negotiation and measurably degrades a
-winning recipe) and **exemption clauses don't scope** ("this limit doesn't
-apply to code blocks" still suppresses code blocks).
+Avoid nuance clauses that reopen negotiation and exemption clauses that do
+not scope reliably.
 
 For discipline skills, build the prohibition stack from the
 enforcement catalog in the research doc — and populate rationalization
@@ -90,7 +76,7 @@ tables **only with observed excuses**, never invented ones.
 NO SKILL WITHOUT A FAILING BASELINE FIRST
 ```
 
-This is TDD for process documents, and it applies to **edits too**:
+This is TDD for new skills and edits:
 
 1. **RED** — run the triggering scenario with a fresh agent *without* the
    skill (or with the edit reverted). Watch it fail. If the baseline
@@ -114,7 +100,7 @@ trim entries with evidence, never delete the structure.
 | "The skill is obviously right, skip the baseline" | Obvious-to-you ≠ binding-on-an-agent. The baseline is 5 minutes; a wrong skill misleads every future session. |
 | "It's just a small edit" | Edits change behavior. Re-run the scenario. |
 | "I'll test it in real use" | Real use is production. You won't notice the failure until it costs a session. |
-| "More detail makes it stronger" | Length is cost. Every line loads into context; agents skim long skills. Cut to what changes behavior. |
+| "More detail makes it stronger" | Length is cost. Cut text that does not change behavior. |
 | "This knowledge is too useful to drop" | Then it belongs in a findings doc or CLAUDE.md — the gate said it's not a *skill*. |
 
 ## Red Flags — STOP

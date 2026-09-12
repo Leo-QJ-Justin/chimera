@@ -5,15 +5,10 @@ description: Use when a task has an approved spec or research brief and needs a 
 
 # Writing Plans
 
-> Adapted from Superpowers `writing-plans` (Jesse Vincent, MIT) with ECC's
-> Pattern Grounding and chimera's experiment-plan variant.
-
 ## Overview
 
-Write plans assuming the implementer has zero context for this codebase and
-questionable taste. Document everything they need: which files to touch,
-the code itself, how to test it, bite-sized steps. DRY. YAGNI. TDD.
-Frequent commits.
+Write for an implementer with no conversation context: exact files, code,
+checks, small steps, and frequent commits. Use DRY, YAGNI, and TDD.
 
 **Announce at start:** "I'm using the writing-plans skill to create the plan."
 
@@ -23,28 +18,23 @@ not.)
 
 ## Pattern Grounding (before writing any plan)
 
-Search the codebase for the conventions this plan must mirror. Capture ONE
-existing example per relevant category, cited as `file:line`:
+Capture one existing `file:line` example for each relevant convention:
 
 - Build mode: naming, error handling, test structure
 - Exploration mode: data loading, evaluation/metric computation
 
-**If no similar code exists, state that explicitly in the plan. Do not
-invent a pattern.**
+If none exists, say so; do not invent one.
 
 ## Mode Fork
 
-**Build mode → implementation plan.** Every task carries its own test
-cycle; steps follow RED → verify → GREEN → verify → commit
-(chimera:test-driven-development).
+**Build → implementation plan.** Each task follows RED → verify → GREEN →
+verify → commit.
 
-**Exploration mode → experiment plan.** Structure:
+**Exploration → experiment plan:**
 1. Data prep (snapshot to pin, with how it will be fingerprinted)
 2. Baseline (the dumb thing to beat; from `docs/prd.md` if present)
 3. Experiments, in order, each with: what varies, what's measured
-4. Evaluation metric, plus the guard metric it must not be bought at the
-   expense of (both inherited from the brief, which takes them from the
-   PRD when it exists)
+4. Evaluation and guard metrics from the brief
 5. **Stopping rule (mandatory):** "if <metric> improves less than <X> after
    <N> experiments, conclude no-signal and stop."
 
@@ -135,10 +125,9 @@ snapshot → run baseline → record in findings doc → run experiment → reco
 
 ## Task Right-Sizing
 
-A task is the smallest unit that carries its own test cycle (or experiment)
-and is worth a fresh reviewer's gate. Fold setup, config, and docs into the
-task whose deliverable needs them; split only where a reviewer could reject
-one task while approving its neighbor. Each step is one action (2-5 min).
+A task carries one test cycle or experiment and can be reviewed alone.
+Fold setup, config, and docs into its deliverable; split where a reviewer
+could reject one task but approve its neighbor. Each step is one action.
 
 **Bulk artifacts split at one unit.** Where a task produces many units of
 one kind — fixtures, migrations, generated configuration, labelled data,
@@ -174,6 +163,5 @@ Fix inline. No re-review.
 
 ## Handoff
 
-The plan is executed by `/start-task` Phase 4 in this session — announce
-readiness and proceed. Do not dispatch subagents to implement (subagents
-never commit).
+Announce readiness; `/start-task` Phase 4 executes it in this session.
+Subagents do not implement or commit.

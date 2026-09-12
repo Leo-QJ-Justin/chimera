@@ -1,7 +1,8 @@
 # Writing Good Tests
 
-**Load this reference when:** writing or changing tests, adding mocks, or
-adding cleanup/helper methods for tests.
+**Load this reference when:** using mocks or fakes, adding test helpers or
+cleanup, testing source/config/documents, or deriving expected values with
+nontrivial helpers.
 
 ## Overview
 

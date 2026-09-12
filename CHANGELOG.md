@@ -21,8 +21,8 @@ project must produce. Every improvement edits a file that already runs.
 ### Added
 - `skills/finishing-a-branch/post-loop-paths.md` — the exception paths
   (Amendment, **Split**, discard confirmation, **Step 0b dispositions**,
-  the option table), split out of a skill that was 210 lines against its
-  own 200-line budget. The main body lands at 199.
+  the option table), split out of the ordinary integration path for
+  conditional loading.
 - `skills/finishing-a-branch` **Step 0b**, between the review gate and
   the suite run: every Decisions entry is marked task-local or rewritten
   in place into the living document that governs it; a decision changing
@@ -68,9 +68,24 @@ project must produce. Every improvement edits a file that already runs.
   "every artifact that encodes the amended behavior" — fixtures,
   labelled data, tests, prompts, generated configuration.
 - `docs/testing/smoke.md`: section 0 validates `marketplace.json`, checks
-  that the two version files agree, and audits skill line budgets; the
-  user-agnostic grep now scans `docs/testing` and `docs/specs`, where
-  project detail actually leaks in.
+  that the two version files agree, and enforces skill, description,
+  reference, and cumulative workflow context budgets; the user-agnostic
+  grep now scans `docs/testing` and `docs/specs`, where project detail
+  actually leaks in.
+- Skill prompt compression removes repeated summaries and examples while
+  preserving the pressure-tested rules. The ordinary build path falls from
+  7,940 to 5,235 words (34 percent); tabular EDA falls from 8,964 to 7,238.
+  Most of that is reallocation rather than deletion: detailed test guidance
+  and statistical-test guidance now load only when their observable
+  triggers fire. Measurements, ceilings and preservation evidence live in
+  `docs/testing/prompt-compression.md`.
+- `using-chimera` is **not** compressed. A pass reduced it to 136 words to
+  meet the 150-word always-loaded rule; that was reverted and the ceiling
+  raised to 500 instead. Its routing triggers are the keyword-matching
+  surface, and the compressed form replaced them with bare labels. Restoring
+  it costs 322 words and the build bundle still fits. Scenario `change-23`
+  now pressure-tests the routing surface; the session-start test asserts a
+  floor and no ceiling, so restoring a trigger keyword is not a failure.
 - `.claude-plugin/marketplace.json` version corrected from `1.8.1` — it
   had drifted a release behind `plugin.json`, which nothing checked.
 
@@ -86,10 +101,12 @@ project must produce. Every improvement edits a file that already runs.
 - Document status markers → **improvement D's fold proving insufficient
   after one full project.**
 
-Known budget breaches, untouched and recorded: `test-driven-development`
-(242 lines against 200) and `using-chimera` (456 words against 150, and
-injected verbatim into every session). This release applies a
-touched-files gate.
+All skill, description, reference, and ordinary workflow context budgets
+pass `tests/check-skill-budgets.py`. Two ceilings are deliberate
+exceptions with their reasons recorded beside them: `using-chimera` at 500
+words (a 13-route table cannot fit 150), and the conditional references,
+whose ceilings are round numbers with headroom rather than current size
+plus a margin.
 
 ## [1.9.0] - 2026-09-01
 

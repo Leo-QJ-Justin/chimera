@@ -5,57 +5,45 @@ description: Use when a task's implementation or analysis is complete and verifi
 
 # Finishing a Branch
 
-> Adapted from Superpowers `finishing-a-development-branch` (Jesse Vincent,
-> MIT), with chimera's review gate folded in as Step 0.
-
 ## Overview
 
-**Core principle:** Review → fold decisions → verify tests → detect
-environment → present options → execute choice → clean up.
+Review → fold decisions → verify → detect environment → present options →
+execute choice → clean up.
 
 **Announce at start:** "I'm using the finishing-a-branch skill to complete this work."
 
-Exception paths (Amendment, Split, discard, Step 0b dispositions, the
-option table): [post-loop-paths.md](post-loop-paths.md).
+Exception paths (detached HEAD, Amendment, Split, discard, dispositions):
+[post-loop-paths.md](post-loop-paths.md).
 
 ## Step 0: Review Gate
 
 One review pass, before anything merges. No Stop-hook re-review.
 
-**Build mode:** dispatch the chimera `code-reviewer` agent once over
-`BASE..HEAD`, passing: the range, the spec (`docs/specs/...`), the plan's
-Global Constraints, the plan's `## Deviations` list — every known
-deviation from the spec, each with the implementer's rationale, framed as
-a question for the reviewer to judge, not a fact to accept — and
-`mode: build`. Act by severity:
+**Build:** dispatch `code-reviewer` once over `BASE..HEAD`. Pass the range,
+spec, Global Constraints, and every `## Deviations` item with its rationale
+as a question, plus `mode: build`. Act by severity:
 - Critical → fix now, before proceeding
 - Important → fix before presenting the menu
 - Minor → note; fix or record
 
-**Exploration mode:** dispatch the same agent with `mode: exploration` and
-the findings doc path — it runs the methodology rubric (leakage, look-ahead
-bias, snapshot pinning, numbers-match-output, stopping rule honored,
-decision line present).
+**Exploration:** pass `mode: exploration` and the findings path for the
+methodology rubric: leakage, look-ahead bias, snapshot, reproduced numbers,
+stopping rule, and decision line.
 
-**Handling feedback:** verify each finding against the code before
-implementing; push back with evidence when the reviewer is wrong. Never
-implement blindly; never respond with performative agreement — "You're
-absolutely right!" is banned; state the fix or the counter-evidence.
+Verify findings before acting. State the fix or counter-evidence; no blind
+implementation or performative agreement.
 
 ## Step 0b: Fold Decisions Into the Living Documents
 
-The spec is history once the task merges, and Step 0's fixes have
-settled the decisions. Walk the spec's Decisions section now, before
-the suite run, so the suite still covers the tree that merges.
+After review fixes, walk the spec's Decisions before the suite so it covers
+the tree that merges.
 
-Mark each entry **task-local**, or write it into the living document
-that governs it (system design, TRD, data model, project CLAUDE.md,
-prompt contract) as the current statement and its reason, rewritten in
-place — the spec's entry records what it replaced, so living documents
-carry no amendment chains. A decision that changes an established
-convention also names every artifact encoding the previous answer, each
-with a disposition ([post-loop-paths.md](post-loop-paths.md)). The menu
-comes only after every decision has a home.
+Mark each entry **task-local**, or rewrite the current statement and reason
+in its living document (system design, TRD, data model, CLAUDE.md, prompt
+contract). Living documents carry no amendment chains. A convention change
+also gives every artifact holding the old answer a disposition
+([post-loop-paths.md](post-loop-paths.md)). Present no menu until each
+decision has a home.
 
 ## Step 1: Verify Tests
 
@@ -78,13 +66,12 @@ WORKTREE_PATH=$(git rev-parse --show-toplevel)
 |-------|------|---------|
 | `GIT_DIR == GIT_COMMON` (normal repo) | Standard 3 options | No worktree to clean up |
 | `GIT_DIR != GIT_COMMON`, named branch | Standard 3 options | Provenance-based (Step 6) |
-| `GIT_DIR != GIT_COMMON`, detached HEAD | Reduced 2 options (no merge) | Externally managed — leave in place |
+| `GIT_DIR != GIT_COMMON`, detached HEAD | Load sibling; reduced menu | Externally managed — leave in place |
 
 ## Step 3: Determine Base Branch
 
-The base is whatever this work forked from. If not already known, ask:
-"This branch split from <best guess> - is that correct?" Confirm before
-merging — merging into the wrong base is expensive to undo.
+Confirm the fork point before merging. If unknown, ask: "This branch split
+from <best guess> - is that correct?"
 
 ## Step 4: Present Options
 
@@ -110,17 +97,6 @@ docs/findings/<file>. What would you like to do?
    this branch (not merged - see the promotion rule)
 2. Push and create a Pull Request (findings + notebooks for reference)
 3. Keep the branch as-is (I'll handle it later)
-
-Which option?
-```
-
-**Detached HEAD — present exactly these 2 options:**
-
-```
-Task complete. You're on a detached HEAD (externally managed workspace).
-
-1. Push as new branch and create a Pull Request
-2. Keep as-is (I'll handle it later)
 
 Which option?
 ```
@@ -155,13 +131,10 @@ Once green: clean up worktree (Step 6), then `git branch -d <branch>`.
 git push -u origin <feature-branch>
 ```
 
-Create the PR against <base-branch>: conventional-commit title from the
-dominant commit type; follow the repo's PR template if present; **no
-boilerplate footers, no generated-with lines, no co-author lines**. Report
-the URL. Keep the worktree — PR feedback gets fixed there. A rejected push
-means the remote moved: investigate; force-push only on your human
-partner's explicit request (and then `--force-with-lease`, never
-`--force`).
+Create the PR against <base-branch> with a conventional title and the repo
+template. Add no generated or co-author footer. Report the URL and keep the
+worktree for feedback. On rejection, investigate; force-push only by
+explicit request, with `--force-with-lease`.
 
 ### Option 3: Keep As-Is
 
@@ -174,8 +147,8 @@ sibling file.
 
 ## Step 6: Cleanup Workspace
 
-Runs for Option 1 and confirmed discards; Options 2 and 3 always preserve
-the worktree. Uses the Step 2 values captured before any cd.
+Run for Option 1 and confirmed discards. Options 2 and 3 preserve the
+worktree. Use the Step 2 values captured before `cd`.
 
 - `GIT_DIR == GIT_COMMON`: normal repo, nothing to clean. Done.
 - `WORKTREE_PATH` under `.worktrees/` or `worktrees/`: chimera created it —

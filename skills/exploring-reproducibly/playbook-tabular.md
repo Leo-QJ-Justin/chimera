@@ -2,9 +2,9 @@
 
 Feature-and-row data with a target column. Load with
 [playbook-generic.md](playbook-generic.md) (five stages, first-pass
-ritual, cleaning workflow, leakage rules) and
-[playbook-stat-tests.md](playbook-stat-tests.md) (group comparisons,
-Cramer's V, chi square).
+ritual, cleaning workflow, leakage rules). Load
+[playbook-stat-tests.md](playbook-stat-tests.md) only for an inferential
+claim, test selection, or a group judgment beyond the sample.
 
 `[external]` marks published practice adopted here but not yet exercised
 in a shipped analysis.

@@ -1,9 +1,10 @@
 # EDA Playbook — Generic Spine
 
-The shared base for every topic playbook. Load it with any EDA work,
-together with [playbook-stat-tests.md](playbook-stat-tests.md) and the
-topic playbook matching the data at hand. Prose and observation-cell
-format follow [analysis-style.md](analysis-style.md).
+The shared base for every topic playbook. Load it with any EDA work and the
+topic playbook matching the data. Load
+[playbook-stat-tests.md](playbook-stat-tests.md) only for an inferential
+claim, test selection, or a group judgment beyond the sample. Prose and
+observation-cell format follow [analysis-style.md](analysis-style.md).
 
 `[external]` marks published practice adopted here but not yet exercised
 in a shipped analysis. Evaluate it against the data before relying on it.

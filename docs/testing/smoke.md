@@ -12,10 +12,8 @@ bash tests/test-session-start.sh     # JSON shape PASS
 python3 -c "import json;[json.load(open(f)) for f in ['hooks/hooks.json','.claude-plugin/plugin.json','.claude-plugin/marketplace.json']];print('OK')"
 # the two version files must agree (they silently drifted once)
 python3 -c "import json;a=json.load(open('.claude-plugin/plugin.json'))['version'];b=json.load(open('.claude-plugin/marketplace.json'))['plugins'][0]['version'];assert a==b,(a,b);print('version OK',a)"
-# skill line budgets (creating-skills: frequently loaded < 200 lines).
-# Known pre-existing breach, not a regression: test-driven-development
-# (242). Anything else listed is new and must be split or trimmed.
-for f in skills/*/SKILL.md; do n=$(wc -l < "$f"); [ "$n" -ge 200 ] && echo "OVER-200 $f $n"; done
+# skill, description, reference, and cumulative workflow context budgets
+python3 tests/check-skill-budgets.py --enforce
 # user-agnostic guard: no personal names or conversation references in
 # operational surfaces (author metadata in manifests is the only allowed
 # personal reference). docs/ is scanned too - scenarios and specs are
