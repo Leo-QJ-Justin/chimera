@@ -47,3 +47,4 @@ rejected genesis phase.
 | `change-20` | **v1.10 I** — the survey guard | writing-comparative-reports |
 | `change-21` | **v1.10 D** — decisions get a home | finishing-a-branch, designing-tasks |
 | `change-22` | **v1.10 H** — the mutation check (experiment) | code-reviewer |
+| `change-23` | **bootstrap** — the routing surface is keyword-matched | using-chimera, budget checker, session-start test |
