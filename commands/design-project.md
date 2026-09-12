@@ -148,7 +148,12 @@ carry equal weight for the next reader.
    the reader to infer.
 4. **ID integrity** — FR IDs unique and contiguous.
 5. **Register** — the STE pass is run and the Terms table covers every
-   term in the document that is not common English.
+   term in the document that is not common English. "Required",
+   "essential" and "mandatory" name exactly the values whose absence
+   stops the system from accepting the thing being described; a value
+   the business wants but whose absence stops nothing gets a different
+   word. This is a word-choice check, not a design step — where a TRD
+   exists, its acceptance table carries the unit and the source.
 6. **Commitments** — every commitment the PRD's "Commitments realized"
    section cites exists in Phase 1b's output; no FR contradicts a
    commitment. Run this in the same pass as the ID check.

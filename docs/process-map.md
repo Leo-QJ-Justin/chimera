@@ -28,13 +28,18 @@ Phase 1b BIND             (Ch. 8) convert evidence into commitments,
      migration-cost triggers fire → persistent-model-discovery
      skill → docs/technical-requirements.md → human approval
      (untriggered: one line in the PRD, no file)
+     seven questions: grain, immutability, corrections, consumers,
+     scope, failure modes, acceptance — what an absence does, to
+     which unit, and whether the source can supply it (v1.10 G)
    self-check: commitments trace to evidence; violators have
    dispositions (Ch. 11)
    ↓
 Phase 1c PRD              written against brief + commitments;
                           cites them, never re-litigates them;
                           self-check: cited commitments exist,
-                          FR IDs contiguous (Ch. 11)
+                          FR IDs contiguous (Ch. 11);
+                          "required" names exactly the values whose
+                          absence stops acceptance (v1.10 G)
 Phase 2  ARCHITECTURE     ADRs; one-line Tier-1 ADR points at the
                           TRD when one exists (Ch. 8, 11)
 Phase 3  SYSTEM DESIGN    preamble states grain / immutability /

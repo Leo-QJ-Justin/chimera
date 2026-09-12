@@ -5,7 +5,10 @@
 
 ## Terms
 {{One row per term that is not common English. One meaning each — the
-document uses the term this way everywhere. Delete the section if empty.}}
+document uses the term this way everywhere. Delete the section if empty.
+"Required", "essential" and "mandatory" name exactly the values whose
+absence stops the system from accepting the thing being described; a
+value wanted later whose absence stops nothing gets a different word.}}
 
 | Term | Meaning |
 |---|---|

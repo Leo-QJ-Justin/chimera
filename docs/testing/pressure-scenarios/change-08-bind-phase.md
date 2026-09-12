@@ -33,7 +33,7 @@ closed as findings, not constraints.
 Phase 1b converts evidence into commitments, each written as
 evidence → constraint → implications, in three kinds: format/input
 requirements, scope boundaries, and — when the trigger fires — the
-persistent model via the six questions, producing an approved
+persistent model via the persistent-model questions, producing an approved
 `docs/technical-requirements.md` before PRD writing. The PRD's
 "Commitments realized" section cites them; the system-design preamble
 matches the TRD verbatim; Phase 2 records the one-line Tier-1 ADR
@@ -55,7 +55,7 @@ BIND is a named phase with its own approval gate, so skipping it
 leaves a structural hole (the PRD template's required "Commitments
 realized" section has nothing to cite). The trigger checklist makes
 "does the persistent model need locking?" a mechanical test rather
-than a feel; the six questions force the consumer-working-backward
+than a feel; the persistent-model questions force the consumer-working-backward
 move at genesis instead of mid-implementation. The scope-not-rigor
 distinction is recorded in the trawl doc §7 rather than drifting
 silently past a standing rejection. PASS.

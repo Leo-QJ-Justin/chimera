@@ -6,10 +6,10 @@ description: Use during /design-project Phase 1b (BIND) when the system has exte
 # Persistent Model Discovery
 
 Lock the persistent model — grain, immutability, corrections,
-consumers — before the PRD is written. A schema discovered
+consumers, acceptance — before the PRD is written. A schema discovered
 mid-implementation costs a full rework; a schema locked at genesis is
 designed once. The persistent model is one interlocking design: its
-four parts cannot be approved as separate decisions, so it gets one
+parts cannot be approved as separate decisions, so it gets one
 artifact, the TRD.
 
 ## Trigger (conditional)
@@ -27,7 +27,7 @@ Invoke when the system has ANY of:
 ("Persistence: mutable state, single user, resets acceptable") and
 proceed. A document whose entire content is one sentence is ceremony.
 
-## The six questions
+## The seven questions
 
 Checklist — create a todo per question; each is answered with your
 human partner, never inferred:
@@ -41,6 +41,19 @@ human partner, never inferred:
 5. **Scope boundaries:** what is in scope, what is out, why?
 6. **Failure modes:** what makes this system wrong if the immutability
    discipline is skipped?
+7. **Acceptance:** for each value the PRD calls required, three
+   answers, one row per value:
+   - *Absent, what happens?* One of: the record is refused; a named
+     unit is held for a human; the value is null and nothing is held.
+     "Required" without this answer is not a requirement.
+   - *Which unit?* The unit an absence holds is the smallest unit the
+     consumer joins on — never its parent by default. A problem holds
+     the unit it is about, and nothing above or beside it.
+   - *Can this source supply it?* Where a data-contact spike ran, cite
+     the instance where the value appears, or state that it never
+     appears. A value the source never carries is not a requirement on
+     this system; it is an integration gap with another source, and it
+     must hold nothing.
 
 ## Deliverable
 
@@ -53,6 +66,8 @@ human partner, never inferred:
 5. What are known constraints? (From profiling, feasibility,
    compliance — cite the BIND entries.)
 6. What are the failure modes if the discipline is skipped?
+7. What does an absence of each required value do, to which unit, and
+   can the source supply it? (The acceptance table.)
 
 **Approval gate:** your human partner approves the TRD before PRD
 writing.
