@@ -21,9 +21,11 @@ Phase 1a DATA-CONTACT SPIKE   (Ch. 2) fires when a real corpus or
    "profile → brief" recipe in writing-comparative-reports
    (population join, constraint move, reference implementation,
    bidirectional grounding, live conflicts, evidence labels)
-   a survey of outside solutions carries a mapping-by-cited-instance
-   and a ruled-out section; the survey proposes, the corpus
-   decides (v1.10 I)
+   NOTE: genesis runs no prior-art survey of its own — that trigger
+   is deferred. Whenever writing-comparative-reports IS used on
+   outside products or published methods, its guard applies: a
+   mapping by cited instance + a ruled-out section; the survey
+   proposes, the evidence decides (v1.10 I)
    ↓
 Phase 1b BIND             (Ch. 8) convert evidence into commitments,
    each as evidence → constraint → implications:
@@ -48,9 +50,9 @@ Phase 2  ARCHITECTURE     ADRs; one-line Tier-1 ADR points at the
                           TRD when one exists (Ch. 8, 11)
 Phase 3  SYSTEM DESIGN    preamble states grain / immutability /
                           consumers per the TRD, verbatim (Ch. 8, 11)
-Phase 4  ROADMAP          queue of rows; gate rows; Realizes column
-                          a row names its outcome, never its method;
-                          a held proposal is a cited note (v1.10 F)
+Phase 4  ROADMAP          queue of rows; gate rows; Realizes column;
+                          a row names its outcome, never its method,
+                          and a held proposal is a cited note (v1.10 F)
 Phase 5  SCAFFOLD         skeleton; /new-project; commit genesis
 
 ## 2. Build-mode task — /start-task
@@ -77,29 +79,39 @@ writing-plans:
   plan carries ## Preconditions: every external resource with the
     one command that proves it live (v1.10 E)
    ↓
+Phase 4 opens (both modes): preconditions run BEFORE task 1; a
+  failure stops the phase — renew / reorder / split (v1.10 E)
+   ↓
 test-driven-development (execution):
   writing-good-tests.md loads ONLY for mocks/fakes, helpers or
     cleanup, artifact tests, or nontrivial expected values (v1.10)
-  preconditions run BEFORE task 1; a failure stops the phase —
-    renew / reorder / split (v1.10 E)
   deviations logged in ## Deviations at the moment they are made
     (Ch. 5)
    ↓
 verifying-before-done
    ↓
 finishing-a-branch:
-  code-reviewer briefed with spec + plan constraints + the
-    deviations list framed as questions (Ch. 5)
-  reviewer proves new-behavior coverage by an executed mutation on
-    a scratch copy; nothing moved = inconclusive (v1.10 H)
-  → Step 0b: every Decisions entry marked task-local or written
-    into its living document; a convention change gives every
-    artifact holding the old answer a disposition (v1.10 D)
-  → green suite → menu (merge / PR / keep)
+  Step 0  code-reviewer briefed with spec + plan constraints + the
+    deviations list framed as questions (Ch. 5); it proves
+    new-behavior coverage by an executed mutation on a scratch
+    copy — nothing moved = inconclusive (v1.10 H)
+  Step 0b every Decisions entry marked task-local or written into
+    its living document; a convention change gives every artifact
+    holding the old answer a disposition (v1.10 D)
+  Step 1  green suite → menu (merge / PR / keep)
 
 ## 3. Exploration-mode task — /start-task
 
+Phase 1: a row naming a parked branch re-validates its notes by
+  trial rebase before design (v1.10 E)
+   ↓
 designing-tasks → research brief with decision line
+   ↓
+writing-plans: experiment plan + stopping rule; ## Preconditions and
+  an empty ## Deviations, as in build (Ch. 5, v1.10 E)
+   ↓
+Phase 4 opens (both modes): preconditions run BEFORE task 1; a
+  failure stops the phase — renew / reorder / split (v1.10 E)
    ↓
 exploring-reproducibly:
   playbook-stat-tests.md loads ONLY for an inferential claim, test
