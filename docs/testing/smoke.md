@@ -72,8 +72,10 @@ Prompt: "an app that tracks my reading list". Expect: type question, and
 no distill question because no prior corpus exists → one-at-a-time
 discovery questions → prd-app template filled, carrying the STE register
 line, a Terms table, FR blocks with testable `Done when` lines, a guard
-metric, and every `[ASSUMPTION]` tag reaching the index → the five-point
-self-check run before the approval gate → architecture tradeoffs recorded
+metric, and every `[ASSUMPTION]` tag reaching the index → the six-item
+self-check run before the approval gate, including the rule that
+"required"/"essential"/"mandatory" name exactly the values whose absence
+stops acceptance → architecture tradeoffs recorded
 as ADRs with status, tier, reversal-cost, and confidence lines, with the
 confidence tags not all reading `[High]` → system-design module table
 with a mermaid data flow and a risk table whose rows carry detection
