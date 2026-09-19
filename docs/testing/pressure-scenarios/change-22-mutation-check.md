@@ -73,4 +73,10 @@ import the original package, the suite runs unmutated, and "zero tests
 killed" would otherwise be indistinguishable from genuinely uncovered
 behaviour. Residual weakness accepted: the check costs one suite run
 per new behaviour, which is why it is bounded and why this scenario is
-walked against a real repository rather than on paper. PASS.
+walked against a real repository rather than on paper. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

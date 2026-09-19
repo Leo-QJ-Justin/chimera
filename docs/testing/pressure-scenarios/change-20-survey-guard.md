@@ -71,4 +71,10 @@ imitation hides. The documented-versus-marketing label rides on move 6,
 which the skill already ran, so it adds a column rather than a step.
 Residual weakness accepted: a mapping section can cite a weak
 instance, and the strength of an instance is judgment the rule does not
-adjudicate. PASS.
+adjudicate. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

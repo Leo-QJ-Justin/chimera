@@ -66,4 +66,10 @@ impossibility exactly two legal endings, a named refusal or a
 Decisions entry, so "assume it holds" has no third option. Residual
 weakness accepted: a citation that does not actually support its claim
 passes the lexical check; the review gate remains the catch for that.
-PASS.
+PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

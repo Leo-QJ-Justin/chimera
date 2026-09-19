@@ -72,4 +72,10 @@ reading is not the rule. `rules/common/coding-style.md` requires
 labels to match epistemics, and a capped listing says what it is.
 Residual weakness accepted: a spec can state a form that later proves
 wrong; that is a decision to supersede, which improvement D routes,
-not a gap here. PASS.
+not a gap here. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

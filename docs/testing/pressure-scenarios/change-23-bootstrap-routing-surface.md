@@ -74,4 +74,10 @@ as insufficient evidence — the question is whether a route fires on the
 words a session will actually use. The floor-only test removes the ratchet
 that would have made restoration a failure. Residual weakness accepted: no
 automated check measures trigger-keyword coverage, so this scenario and the
-`creating-skills` keyword rule are the whole guard. PASS.
+`creating-skills` keyword rule are the whole guard. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

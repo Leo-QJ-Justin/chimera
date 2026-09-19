@@ -8,7 +8,14 @@ agent actually loads.
 
 Shape: title → `**Edited surfaces:**` + `**Failure form:**` → `## Setup`
 → `## Failure to reproduce (without the edit)` → `## Pass condition` →
-`## Pressure (two stacked)` → `## Walk result`, ending `PASS.`
+`## Pressure (two stacked)` → `## Walk result`.
+
+**A verdict names how it was reached.** `PASS.` means a walk was performed
+and the rationalization found no compliant form. `PASS (predicted).` plus
+an `**Evidence status:**` line means the verdict is reasoned against the
+edited text and the walk has not run yet. Writing the first when only the
+second happened is the defect improvement B exists to catch, applied to
+this directory instead of to a spec.
 
 ## Index
 

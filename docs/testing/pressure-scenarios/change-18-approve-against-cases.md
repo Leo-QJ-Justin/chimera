@@ -74,4 +74,10 @@ rationalization rows close both restatements. Residual weakness
 accepted: three cases chosen by the rule's author can all be cases the
 rule handles; sub-trigger (ii) is the counterweight, requiring an
 input the rule gets wrong, and the review gate remains the backstop.
-PASS.
+PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

@@ -78,4 +78,10 @@ the blanket answer as the one that leaves fixtures holding a superseded
 convention; the *supersedes* field gives the fourth entry a visible
 difference from the other three at the moment it is read. Residual
 weakness accepted: an entry whose *supersedes* was written "none" in
-error is dismissed correctly by the rule and wrongly in fact. PASS.
+error is dismissed correctly by the rule and wrongly in fact. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

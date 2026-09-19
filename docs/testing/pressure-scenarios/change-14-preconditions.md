@@ -73,4 +73,10 @@ names what skipping buys — a dead dependency found with every earlier
 task already committed. Residual weakness accepted: a probe that
 passes at task 0 and expires during a long execution is not caught by
 this edit; the circuit breaker catches it as a failure during
-execution instead. PASS.
+execution instead. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

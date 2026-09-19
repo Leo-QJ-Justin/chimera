@@ -61,4 +61,10 @@ and stripping the row is not discarding it. Residual weakness
 accepted: a note can itself be written as a spec and cited as though
 it were evidence; the design phase's own approval gate is the catch,
 and the clause says the phase weighs the note rather than adopting it.
-PASS.
+PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.

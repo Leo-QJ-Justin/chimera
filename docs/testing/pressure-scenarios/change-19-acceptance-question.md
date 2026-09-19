@@ -78,4 +78,10 @@ rather than an intuition; where no spike ran, the PRD-level rule still
 forces the first question, which needs no data. Residual weakness
 accepted: a project with neither a TRD nor a spike answers only "what
 does an absence do", and learns the unit and the source the expensive
-way. PASS.
+way. PASS (predicted).
+
+**Evidence status:** this verdict is reasoned against the edited text, not
+yet produced by a walk. A walk loads a fresh session with only the edited
+file, presents the Setup, and applies both pressures in order. Until one
+runs, read the verdict as a prediction — the same standard improvement B
+applies to a spec premise.
