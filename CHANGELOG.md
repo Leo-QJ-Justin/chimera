@@ -4,6 +4,23 @@ All notable changes to chimera are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [SemVer](https://semver.org/).
 
+## [1.10.1] - 2026-09-19
+
+Alignments from the v1.10.0 release smoke run (`docs/testing/smoke.md`).
+No new behavior; the matrix now states what the commands and skills do,
+and one skill sentence closes a gap the run exposed.
+
+### Changed
+- `docs/testing/smoke.md` — the manual sections must run interactively
+  (in print mode the model rationalized past two approval gates and the
+  reviewer dispatch); Section 5 accepts a committed analysis script in
+  place of a notebook; Section 6 expects Phase 5 to scaffold and commit
+  without a further gate, and the `Boundary` column only when a module
+  is marked probabilistic, matching `/design-project` and the
+  system-design template.
+- `skills/finishing-a-branch` Step 0b — a decision whose home needs the
+  human partner's answer is asked for before the menu, not beside it.
+
 ## [1.10.0] - 2026-09-12
 
 Nine improvements from the 2026-09-09/10/11 field retrospectives. The
