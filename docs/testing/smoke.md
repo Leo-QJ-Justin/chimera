@@ -4,6 +4,11 @@ Run after every version bump, before pushing to the marketplace.
 Estimated time: ~20 minutes (scripted checks ~1 minute; manual flows the
 rest).
 
+Sections 1 to 6 are interactive flows: run them in an interactive session.
+In print mode the model rationalizes past approval gates and subagent
+dispatch (observed in the v1.10.0 run), so a print-mode run is not a smoke
+run.
+
 ## 0. Scripted checks (always first)
 
 ```bash
@@ -54,17 +59,18 @@ Task: "add a slugify function". Expect, in order: branch created off main
 visibly RED→GREEN (failing test run shown before implementation) (Phase
 4); fresh verification run (Phase 5); review-gate dispatch reporting a
 mutation and the tests it turned red, then Step 0b walking the spec's
-Decisions entries to a home, then the 3-option menu (Phase 6).
+Decisions entries to a home (a home that needs your answer is asked for
+before the menu, not beside it), then the 3-option menu (Phase 6).
 
 ## 5. `/start-task` — exploration mode (throwaway repo with a CSV)
 
 Task: "is column A correlated with column B?". Expect: research brief with
 the "what result would change what decision" line; experiment plan with a
-stopping rule; notebook under `notebooks/` naming the pinned snapshot;
-findings doc in `docs/findings/` ending with a `Decision:` line; any
-aggregate reported together with the differing instances behind it under
-a stated cap; clean rerun before numbers are reported; methodology review
-at finish.
+stopping rule; the analysis, a notebook under `notebooks/` or a committed
+script, naming the pinned snapshot; findings doc in `docs/findings/`
+ending with a `Decision:` line; any aggregate reported together with the
+differing instances behind it under a stated cap; clean rerun before
+numbers are reported; methodology review at finish.
 
 ## 6. `/design-project` (conversation only, no scaffold needed)
 
@@ -82,12 +88,14 @@ with a mermaid data flow and a risk table whose rows carry detection
 signals → roadmap table whose rows name outcomes rather than methods,
 with modes, a `Realizes` column whose IDs resolve
 to PRD requirements, at least one gate row, and the critical-path and
-parallel footer notes → offer to scaffold. Abort before scaffold; confirm
-all four docs exist and are committed.
+parallel footer notes → Phase 5 scaffolds via /new-project and commits
+genesis with no further gate. Confirm all four docs exist and are
+committed.
 
 The reading-list prompt has no model component, so system design must
-carry **no** AI properties section and no `Boundary` column. To exercise
-those, run a second pass on "a support assistant that answers from our
+carry **no** AI properties section. A `Boundary` column appears only if
+the design marks a module probabilistic, and that module then names a
+fail-closed contract. To exercise the AI sections, run a second pass on "a support assistant that answers from our
 internal docs" and confirm `docs/system-design.md` gains the AI
 properties section with all four memory layers decided, an evaluation
 metric that is not the word "accuracy", cost arithmetic whose prices are

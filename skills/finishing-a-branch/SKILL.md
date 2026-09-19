@@ -43,7 +43,8 @@ in its living document (system design, TRD, data model, CLAUDE.md, prompt
 contract). Living documents carry no amendment chains. A convention change
 also gives every artifact holding the old answer a disposition
 ([post-loop-paths.md](post-loop-paths.md)). Present no menu until each
-decision has a home.
+decision has a home; a home that needs your human partner's answer is
+asked for before the menu, not beside it.
 
 ## Step 1: Verify Tests
 
