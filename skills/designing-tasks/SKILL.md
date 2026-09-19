@@ -39,9 +39,9 @@ You MUST create a todo for each item and complete them in order:
      never does" carries an instance citation — file, section, page, or
      a count over the pinned set. One without is a placeholder.
    - **Enforcement check:** every sentence of the form "X cannot
-     happen" or "X is never emitted" names its validator or test. Without
-     enforcement, enforce it or move it to Decisions with a false-making
-     trigger. Fix inline; no re-review.
+     happen", "X addresses no unit", or "X is never emitted" names its
+     validator or test. Without enforcement, enforce it or move it to
+     Decisions with a false-making trigger. Fix inline; no re-review.
 8. **User review gate** — "Spec written and committed to `<path>`. Please
    review before we write the implementation plan." Wait. Make requested
    changes.
@@ -58,8 +58,9 @@ You MUST create a todo for each item and complete them in order:
 - Interfaces: exact inputs/outputs; if `docs/system-design.md` exists, name
   touched modules and honor their I/O contracts. **A type is not a form:**
   state each value's one representation, two or three inputs mapping to it,
-  and its source rule. This binds fixtures, expected output, config, stored
-  columns, and labelled data.
+  and its source rule. `str` is a type; "lowercase ISO-639-1, from the
+  request header" is a form. This binds fixtures, expected output, config,
+  stored columns, and labelled data.
 - Error handling and testing approach (per chimera:test-driven-development)
 - Flow sketch (required when the task adds or reshapes modules): a short
   diagram tracing one input through named functions and files. If a call

@@ -84,7 +84,10 @@ constraining it, and passes forever without having said anything.
 
 ## Preservation checks
 
-Read-only walks against the edited surfaces passed these scenarios:
+Read-only preservation **reads** against the edited surfaces confirmed the
+pass condition of these scenarios is still present in the text. These were
+reads, not walks: no fresh session was loaded with only the edited file and
+put under the two stacked pressures.
 
 - `change-01`, `change-03`, `change-04`, `change-05`, `change-06`,
   `change-07`, `change-09`.
@@ -107,9 +110,12 @@ Additional probes passed:
 - Debugging retains its four ordered phases and the three-failed-fixes
   architecture stop.
 
-**Known gap in this evidence.** The walks above were run by the agent that
-made the edits, and twelve of twenty-two scenarios were rerun. Treat the
-list as a record of what was checked, not as an independent result.
+**Known gap in this evidence.** The reads above were performed by the agent
+that made the edits, and covered twelve of twenty-two scenarios. Treat the
+list as a record of what was checked, not as an independent result — and
+not as a walk. Every scenario added in this release carries
+`PASS (predicted).`; see `pressure-scenarios/README.md` for the
+walked-versus-reasoned distinction.
 
 ## The author-side mutation check now loads conditionally
 

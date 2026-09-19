@@ -72,8 +72,10 @@ the check's most dangerous failure: an editable install makes the copy
 import the original package, the suite runs unmutated, and "zero tests
 killed" would otherwise be indistinguishable from genuinely uncovered
 behaviour. Residual weakness accepted: the check costs one suite run
-per new behaviour, which is why it is bounded and why this scenario is
-walked against a real repository rather than on paper. PASS (predicted).
+per new behaviour, which is why it is bounded. This scenario needs a real
+repository to walk: the chimera repo has three test scripts and no package
+under test, so there is no behaviour here to reduce to identity.
+PASS (predicted).
 
 **Evidence status:** this verdict is reasoned against the edited text, not
 yet produced by a walk. A walk loads a fresh session with only the edited

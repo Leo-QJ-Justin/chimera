@@ -5,8 +5,10 @@ with project-genesis and scaffolding commands. Skills are adapted from
 [Superpowers](https://github.com/obra/superpowers) (Jesse Vincent, MIT) and
 the review agent from
 [Everything Claude Code](https://github.com/affaan-m/everything-claude-code)
-(affaan-m, MIT) — cut down to a bare-minimum workflow set and made
-mode-aware for mixed software/ML work.
+(affaan-m, MIT), and `writing-in-ste` is ported from
+[`danyuchn/asd-ste100-skill`](https://github.com/danyuchn/asd-ste100-skill)
+(MIT) — cut down to a bare-minimum workflow set and made mode-aware for
+mixed software/ML work. Full provenance: [NOTICE.md](NOTICE.md).
 
 **Posture: strict inside the loop, frictionless outside it.** Chimera never
 blocks work done directly on `main` (docs, chores, quick fixes). Discipline
@@ -127,7 +129,8 @@ measure without failing); [docs/testing/smoke.md](docs/testing/smoke.md)
 for the manual end-to-end matrix;
 [docs/testing/pressure-scenarios/](docs/testing/pressure-scenarios/) for
 the per-change failure scenarios skill edits are walked against before
-landing.
+landing — or, where a walk has not yet run, carrying an explicit
+`PASS (predicted).` verdict that says so.
 
 What a skill costs to load is a first-class constraint: the ordinary build
 path is budgeted as a whole, and heavy references load only when their
@@ -156,4 +159,6 @@ than a separate list. As of v1.10.0:
 
 ## License
 
-MIT
+MIT. Chimera adapts MIT-licensed material from Superpowers (Jesse Vincent),
+Everything Claude Code (affaan-m), and `danyuchn/asd-ste100-skill`
+(danyuchn). Per-file provenance and the full attribution: [NOTICE.md](NOTICE.md).

@@ -46,6 +46,13 @@ project must produce. Every improvement edits a file that already runs.
   `--enforce` fails; `--report` measures without failing.
 - `docs/testing/prompt-compression.md` — the measurements, the two bases
   the ceilings are set on, the preservation evidence and its stated gap.
+- `NOTICE.md` — one home for upstream attribution. The compression pass
+  stripped the per-skill `> Adapted from …` blockquotes from eight skills;
+  they cost context on every session load for information the running agent
+  never uses, so they are consolidated here rather than restored. Names all
+  three MIT upstreams including `danyuchn/asd-ste100-skill`, which the
+  README had never named, plus per-file provenance. Linked from the README
+  header and its License section.
 
 ### Changed
 - `designing-tasks`: new section **Approve Against Cases, Not Prose** — a
@@ -92,6 +99,12 @@ project must produce. Every improvement edits a file that already runs.
   it costs 322 words and the build bundle still fits. Scenario `change-23`
   now pressure-tests the routing surface; the session-start test asserts a
   floor and no ceiling, so restoring a trigger keyword is not a failure.
+- Evidence vocabulary: a pressure-scenario verdict now says how it was
+  reached. `PASS.` means a walk ran; `PASS (predicted).` plus an
+  `**Evidence status:**` line means the verdict is reasoned against the
+  edited text. All ten scenarios added in this release are predicted, and
+  `prompt-compression.md`, the scenarios README and the main README were
+  swept to stop asserting walks that did not happen.
 - `.claude-plugin/marketplace.json` version corrected from `1.8.1` — it
   had drifted a release behind `plugin.json`, which nothing checked.
 

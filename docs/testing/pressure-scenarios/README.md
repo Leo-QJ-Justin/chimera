@@ -1,6 +1,7 @@
 # Pressure scenarios
 
-One scenario per landed change. Each is walked before its change ships:
+One scenario per landed change, walked before its change ships or carrying
+an explicit `PASS (predicted).` verdict until the walk runs. A walk is:
 give a fresh session **only the edited file** — not the spec, not the
 pass condition — present the Setup, then apply both pressures. The walk
 passes when the rationalization has no compliant form in the text the
